@@ -3,8 +3,10 @@ import json
 import os
 import shutil
 from datetime import datetime
+from pathlib import Path
 from typing import Dict, Any
 
+import numpy as np
 import torch
 import yaml
 
@@ -24,6 +26,24 @@ def read_json(full_path=''):
     with open(full_path, "r") as f:
         file = json.load(f)
     return file
+
+
+def load_mesh(mesh_path):
+    cvt = lambda x, t: [t(y) for y in x]
+    mesh_text = Path(mesh_path).read_text().splitlines()
+    vertices, indices, uvs, uv_indices = [], [], [], []
+    for line in mesh_text:
+        if line.startswith("v "):
+            vertices.append(cvt(line.split(" ")[1:4], float))
+        if line.startswith("vt "):
+            uvs.append(cvt(line.split(" ")[1:], float))
+        if line.startswith("f "):
+            if '/' in line:
+                indices.append([int(x.split('/')[0]) - 1 for x in line.split(' ')[1:]])
+                uv_indices.append([int(x.split('/')[1]) - 1 for x in line.split(' ')[1:]])
+            else:
+                indices.append([int(x) - 1 for x in line.split(' ')[1:]])
+    return np.array(vertices), np.array(indices), np.array(uvs), np.array(uv_indices)
 
 
 def get_loader(root='./'):

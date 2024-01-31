@@ -61,8 +61,8 @@ def summary_device(bypass=False):
         log_torch_usage()
 
     print(print_message(message='', line=''))
-    print(print_message(message='Creadto Corp.', padding=5, center=True))
-    print(print_message(message='SangH.An@Creadto.com', padding=5, center=True))
+    print(print_message(message='Creadto Inc.', padding=5, center=True))
+    print(print_message(message='sangh.an@creadto.com', padding=5, center=True))
     print(print_message(message='', line='='))
     return device
 
