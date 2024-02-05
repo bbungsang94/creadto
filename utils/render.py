@@ -1,10 +1,377 @@
+import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import nvdiffrast.torch as dr
+from easydict import EasyDict
+from pytorch3d.renderer import rasterize_meshes
+from pytorch3d.structures import Meshes
 from torchvision.ops import masks_to_boxes
 
 from utils.camera import OrthographicCamera
 from utils.illumination.shader import SoftPhongShader
+from utils.io import save_mesh, load_mesh
+
+
+class Pytorch3dRasterizer(nn.Module):
+    """
+    This class implements methods for rasterizing a batch of heterogenous
+    Meshes.
+
+    Notice:
+        x,y,z are in image space
+    """
+
+    def __init__(self, image_size=224):
+        """
+        Args:
+            raster_settings: the parameters for rasterization. This should be a
+                named tuple.
+        All these initial settings can be overridden by passing keyword
+        arguments to the forward function.
+        """
+        super().__init__()
+        raster_settings = {
+            'image_size': image_size,
+            'blur_radius': 0.0,
+            'faces_per_pixel': 1,
+            'bin_size': None,
+            'max_faces_per_bin': None,
+            'perspective_correct': False,
+        }
+        raster_settings = EasyDict(raster_settings)
+        self.raster_settings = raster_settings
+
+    def forward(self, vertices, faces, attributes=None):
+        fixed_vetices = vertices.clone()
+        fixed_vetices[..., :2] = -fixed_vetices[..., :2]
+        meshes_screen = Meshes(verts=fixed_vetices.float(), faces=faces.long())
+        raster_settings = self.raster_settings
+
+        pix_to_face, zbuf, bary_coords, dists = rasterize_meshes(
+            meshes_screen,
+            image_size=raster_settings.image_size,
+            blur_radius=raster_settings.blur_radius,
+            faces_per_pixel=raster_settings.faces_per_pixel,
+            bin_size=raster_settings.bin_size,
+            max_faces_per_bin=raster_settings.max_faces_per_bin,
+            perspective_correct=raster_settings.perspective_correct,
+        )
+
+        vismask = (pix_to_face > -1).float()
+        D = attributes.shape[-1]
+        attributes = attributes.clone()
+        attributes = attributes.view(attributes.shape[0] * attributes.shape[1], 3, attributes.shape[-1])
+        N, H, W, K, _ = bary_coords.shape
+        mask = pix_to_face == -1  # []
+        pix_to_face = pix_to_face.clone()
+        pix_to_face[mask] = 0
+        idx = pix_to_face.view(N * H * W * K, 1, 1).expand(N * H * W * K, 3, D)
+        pixel_face_vals = attributes.gather(0, idx).view(N, H, W, K, 3, D)
+        pixel_vals = (bary_coords[..., None] * pixel_face_vals).sum(dim=-2)
+        pixel_vals[mask] = 0  # Replace masked values in output.
+        pixel_vals = pixel_vals[:, :, :, 0].permute(0, 3, 1, 2)
+        pixel_vals = torch.cat([pixel_vals, vismask[:, :, :, 0][:, None, :, :]], dim=1)
+        # import ipdb; ipdb.set_trace()
+        return pixel_vals
+
+
+class Renderer(nn.Module):
+    def __init__(self, image_size, obj_filename, uv_size=256):
+        super(Renderer, self).__init__()
+        self.image_size = image_size
+        self.uv_size = uv_size
+
+        from pytorch3d.io import load_obj
+        verts, faces, aux = load_obj(obj_filename)
+        uvcoords = aux.verts_uvs[None, ...]  # (N, V, 2)
+        uvfaces = faces.textures_idx[None, ...]  # (N, F, 3)
+        faces = faces.verts_idx[None, ...]
+        self.rasterizer = Pytorch3dRasterizer(image_size)
+        self.uv_rasterizer = Pytorch3dRasterizer(uv_size)
+
+        # faces
+        self.register_buffer('faces', faces)
+        self.register_buffer('raw_uvcoords', uvcoords)
+
+        # uv coordsw
+        uvcoords = torch.cat([uvcoords, uvcoords[:, :, 0:1] * 0. + 1.], -1)  # [bz, ntv, 3]
+        uvcoords = uvcoords * 2 - 1
+        uvcoords[..., 1] = -uvcoords[..., 1]
+        face_uvcoords = self.face_vertices(uvcoords, uvfaces)
+        self.register_buffer('uvcoords', uvcoords)
+        self.register_buffer('uvfaces', uvfaces)
+        self.register_buffer('face_uvcoords', face_uvcoords)
+
+        # shape colors
+        colors = torch.tensor([74, 120, 168])[None, None, :].repeat(1, faces.max() + 1, 1).float() / 255.
+        face_colors = self.face_vertices(colors, faces)
+        self.register_buffer('face_colors', face_colors)
+
+        # lighting
+        pi = np.pi
+        constant_factor = torch.tensor(
+            [1 / np.sqrt(4 * pi), ((2 * pi) / 3) * (np.sqrt(3 / (4 * pi))), ((2 * pi) / 3) * (np.sqrt(3 / (4 * pi))),
+             ((2 * pi) / 3) * (np.sqrt(3 / (4 * pi))), (pi / 4) * (3) * (np.sqrt(5 / (12 * pi))),
+             (pi / 4) * (3) * (np.sqrt(5 / (12 * pi))),
+             (pi / 4) * (3) * (np.sqrt(5 / (12 * pi))), (pi / 4) * (3 / 2) * (np.sqrt(5 / (12 * pi))),
+             (pi / 4) * (1 / 2) * (np.sqrt(5 / (4 * pi)))])
+        self.register_buffer('constant_factor', constant_factor)
+
+    def forward(self, vertices, transformed_vertices, albedos, lights=None, light_type='point'):
+        """
+        vertices: [N, V, 3], vertices in work space, for calculating normals, then shading
+        transformed_vertices: [N, V, 3], range(-1, 1), projected vertices, for rendering
+        """
+        batch_size = vertices.shape[0]
+        # rasterizer near 0 far 100. move mesh so minz larger than 0
+        transformed_vertices[:, :, 2] = transformed_vertices[:, :, 2] + 10
+
+        # Attributes
+        face_vertices = self.face_vertices(vertices, self.faces.expand(batch_size, -1, -1))
+        normals = self.vertex_normals(vertices, self.faces.expand(batch_size, -1, -1))
+        face_normals = self.face_vertices(normals, self.faces.expand(batch_size, -1, -1))
+        transformed_normals = self.vertex_normals(transformed_vertices, self.faces.expand(batch_size, -1, -1))
+        transformed_face_normals = self.face_vertices(transformed_normals, self.faces.expand(batch_size, -1, -1))
+
+        # render
+        attributes = torch.cat([self.face_uvcoords.expand(batch_size, -1, -1, -1), transformed_face_normals.detach(),
+                                face_vertices.detach(), face_normals.detach()], -1)
+        # import ipdb;ipdb.set_trace()
+        rendering = self.rasterizer(transformed_vertices, self.faces.expand(batch_size, -1, -1), attributes)
+
+        alpha_images = rendering[:, -1, :, :][:, None, :, :].detach()
+
+        # albedo
+        uvcoords_images = rendering[:, :3, :, :]
+        grid = (uvcoords_images).permute(0, 2, 3, 1)[:, :, :, :2]
+
+        albedo_images = F.grid_sample(albedos, grid, align_corners=False)
+
+        # remove inner mouth region
+        transformed_normal_map = rendering[:, 3:6, :, :].detach()
+        pos_mask = (transformed_normal_map[:, 2:, :, :] < -0.05).float()
+
+        # shading
+        if lights is not None:
+            normal_images = rendering[:, 9:12, :, :].detach()
+            if lights.shape[1] == 9:
+                shading_images = self.add_SHlight(normal_images, lights)
+            else:
+                if light_type == 'point':
+                    vertice_images = rendering[:, 6:9, :, :].detach()
+                    shading = self.add_pointlight(vertice_images.permute(0, 2, 3, 1).reshape([batch_size, -1, 3]),
+                                                  normal_images.permute(0, 2, 3, 1).reshape([batch_size, -1, 3]),
+                                                  lights)
+                    shading_images = shading.reshape(
+                        [batch_size, lights.shape[1], albedo_images.shape[2], albedo_images.shape[3], 3]).permute(0, 1,
+                                                                                                                  4, 2,
+                                                                                                                  3)
+                    shading_images = shading_images.mean(1)
+                else:
+                    shading = self.add_directionlight(normal_images.permute(0, 2, 3, 1).reshape([batch_size, -1, 3]),
+                                                      lights)
+                    shading_images = shading.reshape(
+                        [batch_size, lights.shape[1], albedo_images.shape[2], albedo_images.shape[3], 3]).permute(0, 1,
+                                                                                                                  4, 2,
+                                                                                                                  3)
+                    shading_images = shading_images.mean(1)
+            images = albedo_images * shading_images
+        else:
+            images = albedo_images
+            shading_images = images.detach() * 0.
+
+        outputs = {
+            'images': images * alpha_images,
+            'albedo_images': albedo_images,
+            'alpha_images': alpha_images,
+            'pos_mask': pos_mask,
+            'shading_images': shading_images,
+            'grid': grid,
+            'normals': normals
+        }
+
+        return outputs
+
+    def add_SHlight(self, normal_images, sh_coeff):
+        """
+            sh_coeff: [bz, 9, 3]
+        """
+        ni = normal_images
+        sh = torch.stack([
+            ni[:, 0] * 0. + 1., ni[:, 0], ni[:, 1], ni[:, 2], ni[:, 0] * ni[:, 1], ni[:, 0] * ni[:, 2],
+            ni[:, 1] * ni[:, 2], ni[:, 0] ** 2 - ni[:, 1] ** 2, 3 * (ni[:, 2] ** 2) - 1
+        ],
+            1)  # [bz, 9, h, w]
+        sh = sh * self.constant_factor[None, :, None, None]
+        # import ipdb; ipdb.set_trace()
+        shading = torch.sum(sh_coeff[:, :, :, None, None] * sh[:, :, None, :, :], 1)  # [bz, 9, 3, h, w]
+        return shading
+
+    def add_pointlight(self, vertices, normals, lights):
+        """
+            vertices: [bz, nv, 3]
+            lights: [bz, nlight, 6]
+        returns:
+            shading: [bz, nv, 3]
+        """
+        light_positions = lights[:, :, :3];
+        light_intensities = lights[:, :, 3:]
+        directions_to_lights = F.normalize(light_positions[:, :, None, :] - vertices[:, None, :, :], dim=3)
+        # normals_dot_lights = torch.clamp((normals[:,None,:,:]*directions_to_lights).sum(dim=3), 0., 1.)
+        normals_dot_lights = (normals[:, None, :, :] * directions_to_lights).sum(dim=3)
+        shading = normals_dot_lights[:, :, :, None] * light_intensities[:, :, None, :]
+        return shading.mean(1)
+
+    def add_directionlight(self, normals, lights):
+        """
+            normals: [bz, nv, 3]
+            lights: [bz, nlight, 6]
+        returns:
+            shading: [bz, nlgiht, nv, 3]
+        """
+        light_direction = lights[:, :, :3];
+        light_intensities = lights[:, :, 3:]
+        directions_to_lights = F.normalize(light_direction[:, :, None, :].expand(-1, -1, normals.shape[1], -1), dim=3)
+        normals_dot_lights = (normals[:, None, :, :] * directions_to_lights).sum(dim=3)
+        shading = normals_dot_lights[:, :, :, None] * light_intensities[:, :, None, :]
+        return shading
+
+    def render_shape(self, vertices, transformed_vertices, images=None, lights=None):
+        batch_size = vertices.shape[0]
+        if lights is None:
+            light_positions = torch.tensor([[-0.1, -0.1, 0.2],
+                                            [0, 0, 1]]
+                                           )[None, :, :].expand(batch_size, -1, -1).float()
+            light_intensities = torch.ones_like(light_positions).float()
+            lights = torch.cat((light_positions, light_intensities), 2).to(vertices.device)
+
+        ## rasterizer near 0 far 100. move mesh so minz larger than 0
+        transformed_vertices[:, :, 2] = transformed_vertices[:, :, 2] + 10
+
+        # Attributes
+        face_vertices = self.face_vertices(vertices, self.faces.expand(batch_size, -1, -1))
+        normals = self.vertex_normals(vertices, self.faces.expand(batch_size, -1, -1));
+        face_normals = self.face_vertices(normals, self.faces.expand(batch_size, -1, -1))
+        transformed_normals = self.vertex_normals(transformed_vertices, self.faces.expand(batch_size, -1, -1));
+        transformed_face_normals = self.face_vertices(transformed_normals, self.faces.expand(batch_size, -1, -1))
+        # render
+        attributes = torch.cat(
+            [self.face_colors.expand(batch_size, -1, -1, -1), transformed_face_normals.detach(), face_vertices.detach(),
+             face_normals.detach()], -1)
+        rendering = self.rasterizer(transformed_vertices, self.faces.expand(batch_size, -1, -1), attributes)
+        # albedo
+        albedo_images = rendering[:, :3, :, :]
+        # shading
+        normal_images = rendering[:, 9:12, :, :].detach()
+        if lights.shape[1] == 9:
+            shading_images = self.add_SHlight(normal_images, lights)
+        else:
+            print('directional')
+            shading = self.add_directionlight(normal_images.permute(0, 2, 3, 1).reshape([batch_size, -1, 3]), lights)
+
+            shading_images = shading.reshape(
+                [batch_size, lights.shape[1], albedo_images.shape[2], albedo_images.shape[3], 3]).permute(0, 1, 4, 2, 3)
+            shading_images = shading_images.mean(1)
+        images = albedo_images * shading_images
+
+        return images
+
+    def render_normal(self, transformed_vertices, normals):
+        """
+        -- rendering normal
+        """
+        batch_size = normals.shape[0]
+
+        # Attributes
+        attributes = self.face_vertices(normals, self.faces.expand(batch_size, -1, -1))
+        # rasterize
+        rendering = self.rasterizer(transformed_vertices, self.faces.expand(batch_size, -1, -1), attributes)
+
+        ####
+        alpha_images = rendering[:, -1, :, :][:, None, :, :].detach()
+        normal_images = rendering[:, :3, :, :]
+        return normal_images
+
+    def world2uv(self, vertices):
+        """
+        sample vertices from world space to uv space
+        uv_vertices: [bz, 3, h, w]
+        """
+        batch_size = vertices.shape[0]
+        face_vertices = self.face_vertices(vertices, self.faces.expand(batch_size, -1, -1)).clone().detach()
+        uv_vertices = self.uv_rasterizer(self.uvcoords.expand(batch_size, -1, -1),
+                                         self.uvfaces.expand(batch_size, -1, -1), face_vertices)[:, :3]
+
+        return uv_vertices
+
+    def save_obj(self, filename, vertices, textures):
+        """
+        vertices: [nv, 3], tensor
+        texture: [3, h, w], tensor
+        """
+        save_mesh(filename, vertices, self.faces[0], textures=textures, uvcoords=self.raw_uvcoords[0],
+                  uvfaces=self.uvfaces[0])
+
+    @staticmethod
+    def face_vertices(vertices, faces):
+        """
+        :param vertices: [batch size, number of vertices, 3]
+        :param faces: [batch size, number of faces, 3]
+        :return: [batch size, number of faces, 3, 3]
+        """
+        assert (vertices.ndimension() == 3)
+        assert (faces.ndimension() == 3)
+        assert (vertices.shape[0] == faces.shape[0])
+        assert (vertices.shape[2] == 3)
+        assert (faces.shape[2] == 3)
+
+        bs, nv = vertices.shape[:2]
+        bs, nf = faces.shape[:2]
+        device = vertices.device
+        faces = faces + (torch.arange(bs, dtype=torch.int32).to(device) * nv)[:, None, None]
+        vertices = vertices.reshape((bs * nv, 3))
+        # pytorch only supports long and byte tensors for indexing
+        return vertices[faces.long()]
+
+    @staticmethod
+    def vertex_normals(vertices, faces):
+        """
+        :param vertices: [batch size, number of vertices, 3]
+        :param faces: [batch size, number of faces, 3]
+        :return: [batch size, number of vertices, 3]
+        """
+        assert (vertices.ndimension() == 3)
+        assert (faces.ndimension() == 3)
+        assert (vertices.shape[0] == faces.shape[0])
+        assert (vertices.shape[2] == 3)
+        assert (faces.shape[2] == 3)
+
+        bs, nv = vertices.shape[:2]
+        bs, nf = faces.shape[:2]
+        device = vertices.device
+        normals = torch.zeros(bs * nv, 3).to(device)
+
+        faces = faces + (torch.arange(bs, dtype=torch.int32).to(device) * nv)[:, None, None]  # expanded faces
+        vertices_faces = vertices.reshape((bs * nv, 3))[faces.long()]
+
+        faces = faces.view(-1, 3)
+        vertices_faces = vertices_faces.view(-1, 3, 3)
+
+        normals.index_add_(0, faces[:, 1].long(),
+                           torch.cross(vertices_faces[:, 2] - vertices_faces[:, 1],
+                                       vertices_faces[:, 0] - vertices_faces[:, 1]))
+        normals.index_add_(0, faces[:, 2].long(),
+                           torch.cross(vertices_faces[:, 0] - vertices_faces[:, 2],
+                                       vertices_faces[:, 1] - vertices_faces[:, 2]))
+        normals.index_add_(0, faces[:, 0].long(),
+                           torch.cross(vertices_faces[:, 1] - vertices_faces[:, 0],
+                                       vertices_faces[:, 2] - vertices_faces[:, 0]))
+
+        normals = F.normalize(normals, eps=1e-6, dim=1)
+        normals = normals.reshape((bs, nv, 3))
+        # pytorch only supports long and byte tensors for indexing
+        return normals
 
 
 class DifferentiableRenderer(nn.Module):
@@ -20,26 +387,34 @@ class DifferentiableRenderer(nn.Module):
         if mode == 'bounds':
             self.render_func_texture = render_in_bounds_with_texture
 
-    def render_with_texture_map(self, vertex_positions, triface_indices, uv_coords, uv_indices, texture_image, ranges=None, background=None, resolution=None, vertex_normals=None, vertex_positions_world=None):
+    def render_with_texture_map(self, vertex_positions, triface_indices, uv_coords, uv_indices, texture_image,
+                                ranges=None, background=None, resolution=None, vertex_normals=None,
+                                vertex_positions_world=None):
         if ranges is None:
             ranges = torch.tensor([[0, triface_indices.shape[0]]]).int()
         if resolution is None:
             resolution = self.resolution
         if self.shading:
-            color = render_with_texture_shading(glctx=self.glctx, shader=self.shader, vertex_positions=vertex_positions, triface_indices=triface_indices,
-                                                uv_coords=uv_coords, uv_indices=uv_indices, resolution=resolution, ranges=ranges, vertex_normals=vertex_normals,
+            color = render_with_texture_shading(glctx=self.glctx, shader=self.shader, vertex_positions=vertex_positions,
+                                                triface_indices=triface_indices,
+                                                uv_coords=uv_coords, uv_indices=uv_indices, resolution=resolution,
+                                                ranges=ranges, vertex_normals=vertex_normals,
                                                 vertex_positions_world=vertex_positions_world, background=background)
         else:
-            color = self.render_func_texture(self.glctx, vertex_positions, triface_indices, uv_coords, texture_image, uv_indices, resolution, ranges, background)
+            color = self.render_func_texture(self.glctx, vertex_positions, triface_indices, uv_coords, texture_image,
+                                             uv_indices, resolution, ranges, background)
         return color[:, :, :, :self.num_channels]
 
 
-def render_with_texture(glctx, pos_clip, pos_idx, uv_coords, tex_image, col_idx, resolution, ranges, background=None, vertex_normals=None):
+def render_with_texture(glctx, pos_clip, pos_idx, uv_coords, tex_image, col_idx, resolution, ranges, background=None,
+                        vertex_normals=None):
     render_resolution = int(resolution)
-    rast_out, rast_out_db = dr.rasterize(glctx, pos_clip, pos_idx, resolution=[render_resolution, render_resolution], ranges=ranges)
+    rast_out, rast_out_db = dr.rasterize(glctx, pos_clip, pos_idx, resolution=[render_resolution, render_resolution],
+                                         ranges=ranges)
     texc, texd = dr.interpolate(uv_coords[None, ...], rast_out, col_idx, rast_db=rast_out_db, diff_attrs='all')
     # color = dr.texture(tex_image[None, ...], texc, texd, filter_mode='linear-mipmap-linear', max_mip_level=9)
-    color = dr.texture(tex_image.permute(0, 2, 3, 1).contiguous(), texc, texd, filter_mode='linear-mipmap-linear', max_mip_level=9)
+    color = dr.texture(tex_image.permute(0, 2, 3, 1).contiguous(), texc, texd, filter_mode='linear-mipmap-linear',
+                       max_mip_level=9)
     mask = rast_out[..., -1:] == 0
     if background is None:
         one_tensor = torch.ones((color.shape[0], color.shape[3], 1, 1), device=color.device)
@@ -51,9 +426,11 @@ def render_with_texture(glctx, pos_clip, pos_idx, uv_coords, tex_image, col_idx,
     return color[:, :, :, :-1]
 
 
-def render_in_bounds_with_texture(glctx, pos_clip, pos_idx, uv_coords, tex_image, col_idx, resolution, ranges, background=None, vertex_normals=None):
+def render_in_bounds_with_texture(glctx, pos_clip, pos_idx, uv_coords, tex_image, col_idx, resolution, ranges,
+                                  background=None, vertex_normals=None):
     render_resolution = int(resolution * 1.2)
-    rast_out, rast_out_db = dr.rasterize(glctx, pos_clip, pos_idx, resolution=[render_resolution, render_resolution], ranges=ranges)
+    rast_out, rast_out_db = dr.rasterize(glctx, pos_clip, pos_idx, resolution=[render_resolution, render_resolution],
+                                         ranges=ranges)
     texc, texd = dr.interpolate(uv_coords[None, ...], rast_out, col_idx, rast_db=rast_out_db, diff_attrs='all')
     color = dr.texture(tex_image[None, ...], texc, texd, filter_mode='linear-mipmap-linear', max_mip_level=9)
     mask = rast_out[..., -1:] == 0
@@ -85,30 +462,39 @@ def render_in_bounds_with_texture(glctx, pos_clip, pos_idx, uv_coords, tex_image
         for i in range(4):
             pad[i // 2][i % 2] += additional_pad
 
-        padded = torch.ones((color_crop.shape[0], color_crop.shape[1] + pad[1][0] + pad[1][1], color_crop.shape[2] + pad[0][0] + pad[0][1]), device=color_crop.device)
+        padded = torch.ones((color_crop.shape[0], color_crop.shape[1] + pad[1][0] + pad[1][1],
+                             color_crop.shape[2] + pad[0][0] + pad[0][1]), device=color_crop.device)
         padded[:3, :, :] = padded[:3, :, :] * one_tensor[img_idx, :3, :, :]
         padded[:, pad[1][0]: padded.shape[1] - pad[1][1], pad[0][0]: padded.shape[2] - pad[0][1]] = color_crop
-        color_crop = torch.nn.functional.interpolate(padded.unsqueeze(0), size=(resolution, resolution), mode='bilinear', align_corners=False).permute((0, 2, 3, 1))
+        color_crop = torch.nn.functional.interpolate(padded.unsqueeze(0), size=(resolution, resolution),
+                                                     mode='bilinear', align_corners=False).permute((0, 2, 3, 1))
         color_crops.append(color_crop)
     return torch.cat(color_crops, dim=0)
 
 
-def render_with_texture_shading(glctx, shader, vertex_positions, triface_indices, uv_coords, uv_indices, resolution, ranges,
+def render_with_texture_shading(glctx, shader, vertex_positions, triface_indices, uv_coords, uv_indices, resolution,
+                                ranges,
                                 background=None, vertex_normals=None, vertex_positions_world=None):
     render_resolution = int(resolution)
-    rast_out, rast_out_db = dr.rasterize(glctx, vertex_positions, triface_indices, resolution=[render_resolution, render_resolution], ranges=ranges)
+    rast_out, rast_out_db = dr.rasterize(glctx, vertex_positions, triface_indices,
+                                         resolution=[render_resolution, render_resolution], ranges=ranges)
     mask = rast_out[..., -1:] == 0
     # Interpolate the required attributes
-    texc, texd = dr.interpolate(uv_coords[None, ...], rast_out, uv_indices, rast_db=rast_out_db, diff_attrs='all')  # Interpolates the UV Coordinates
-    normalsc, normalsd = dr.interpolate(vertex_normals[None, ...], rast_out, triface_indices, rast_db=rast_out_db, diff_attrs='all')   # Interpolates vertex normals
-    vertexc, vertexd = dr.interpolate(vertex_positions_world[None, ...], rast_out, triface_indices, rast_db=rast_out_db, diff_attrs='all')   # Interpolates world space vertices
+    texc, texd = dr.interpolate(uv_coords[None, ...], rast_out, uv_indices, rast_db=rast_out_db,
+                                diff_attrs='all')  # Interpolates the UV Coordinates
+    normalsc, normalsd = dr.interpolate(vertex_normals[None, ...], rast_out, triface_indices, rast_db=rast_out_db,
+                                        diff_attrs='all')  # Interpolates vertex normals
+    vertexc, vertexd = dr.interpolate(vertex_positions_world[None, ...], rast_out, triface_indices, rast_db=rast_out_db,
+                                      diff_attrs='all')  # Interpolates world space vertices
 
     # Apply Shading
     device = texc.device
     shader.set_device(device)
 
     # The colors are in rang [0,1], so we need to normalize them accordingly
-    ambient_color, diffuse_color, specular_color = shader(points=vertexc, normals=normalsc, camera_position=torch.tensor([0., 0., -5.])[None, ...].to(device))
+    ambient_color, diffuse_color, specular_color = shader(points=vertexc, normals=normalsc,
+                                                          camera_position=torch.tensor([0., 0., -5.])[None, ...].to(
+                                                              device))
 
     if background is None:
         one_tensor = torch.ones((diffuse_color.shape[0], diffuse_color.shape[3], 1, 1), device=diffuse_color.device)
@@ -159,7 +545,9 @@ def transform_points(points, tform, points_scale=None, out_scale=None):
         points_2d = (points_2d * 0.5 + 0.5) * points_scale[0]
 
     batch_size, n_points, _ = points.shape
-    trans_points_2d = torch.bmm(torch.cat([points_2d, torch.ones([batch_size, n_points, 1], device=points.device, dtype=points.dtype)], dim=-1), tform)
+    trans_points_2d = torch.bmm(
+        torch.cat([points_2d, torch.ones([batch_size, n_points, 1], device=points.device, dtype=points.dtype)], dim=-1),
+        tform)
     if out_scale:  # h,w of output image size
         trans_points_2d[:, :, 0] = trans_points_2d[:, :, 0] / out_scale[1] * 2 - 1
         trans_points_2d[:, :, 1] = trans_points_2d[:, :, 1] / out_scale[0] * 2 - 1

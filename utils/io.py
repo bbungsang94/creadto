@@ -9,6 +9,7 @@ from typing import Dict, Any
 import numpy as np
 import torch
 import yaml
+from skimage.io import imsave
 
 from contents import Contents
 
@@ -44,6 +45,63 @@ def load_mesh(mesh_path):
             else:
                 indices.append([int(x) - 1 for x in line.split(' ')[1:]])
     return np.array(vertices), np.array(indices), np.array(uvs), np.array(uv_indices)
+
+
+def save_mesh(filename, vertices, faces, textures=None, uvcoords=None, uvfaces=None, texture_type='surface'):
+    assert vertices.ndimension() == 2
+    assert faces.ndimension() == 2
+    assert texture_type in ['surface', 'vertex']
+    # assert texture_res >= 2
+
+    if textures is not None and texture_type == 'surface':
+        textures =textures.detach().cpu().numpy().transpose(1,2,0)
+        filename_mtl = filename[:-4] + '.mtl'
+        filename_texture = filename[:-4] + '.png'
+        material_name = 'material_1'
+        # texture_image, vertices_textures = create_texture_image(textures, texture_res)
+        texture_image = textures
+        texture_image = texture_image.clip(0, 1)
+        texture_image = (texture_image * 255).astype('uint8')
+        imsave(filename_texture, texture_image)
+
+    faces = faces.detach().cpu().numpy()
+
+    with open(filename, 'w') as f:
+        f.write('# %s\n' % os.path.basename(filename))
+        f.write('#\n')
+        f.write('\n')
+
+        if textures is not None:
+            f.write('mtllib %s\n\n' % os.path.basename(filename_mtl))
+
+        if textures is not None and texture_type == 'vertex':
+            for vertex, color in zip(vertices, textures):
+                f.write('v %.8f %.8f %.8f %.8f %.8f %.8f\n' % (vertex[0], vertex[1], vertex[2],
+                                                               color[0], color[1], color[2]))
+            f.write('\n')
+        else:
+            for vertex in vertices:
+                f.write('v %.8f %.8f %.8f\n' % (vertex[0], vertex[1], vertex[2]))
+            f.write('\n')
+
+        if textures is not None and texture_type == 'surface':
+            for vertex in uvcoords.reshape((-1, 2)):
+                f.write('vt %.8f %.8f\n' % (vertex[0], vertex[1]))
+            f.write('\n')
+
+            f.write('usemtl %s\n' % material_name)
+            for i, face in enumerate(faces):
+                f.write('f %d/%d %d/%d %d/%d\n' % (
+                    face[0] + 1, uvfaces[i,0]+1, face[1] + 1, uvfaces[i,1]+1, face[2] + 1, uvfaces[i,2]+1))
+            f.write('\n')
+        else:
+            for face in faces:
+                f.write('f %d %d %d\n' % (face[0] + 1, face[1] + 1, face[2] + 1))
+
+    if textures is not None and texture_type == 'surface':
+        with open(filename_mtl, 'w') as f:
+            f.write('newmtl %s\n' % material_name)
+            f.write('map_Kd %s\n' % os.path.basename(filename_texture))
 
 
 def get_loader(root='./'):

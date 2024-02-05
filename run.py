@@ -18,8 +18,8 @@ def train():
 
 
 def demo():
-    from contents.demo import demo_mlp_texture
-    demo_mlp_texture()
+    from contents.demo import demo_check_flame_mask
+    demo_check_flame_mask()
 
 
 if __name__ == "__main__":
