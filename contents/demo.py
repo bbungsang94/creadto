@@ -180,6 +180,10 @@ def demo_check_flame_mask():
 
                 ## render
                 albedos = self.flametex(tex) / 255.
+                topilimage = torchvision.transforms.ToPILImage()
+                image_pil = topilimage(albedos[0])
+                image_pil.save('raw_texture.jpg')
+
                 ops = self.render(vertices, trans_vertices, albedos, lights)
                 predicted_images = ops['images']
                 losses['photometric_texture'] = (image_masks * (ops['images'] - images).abs()).mean() * config.w_pho
@@ -329,7 +333,7 @@ def demo_check_flame_mask():
     sys.path.append('./models/')
     torch.backends.cudnn.benchmark = True
     ffhq_root = r"./contents/FFHQ"
-    image_name = os.path.join(ffhq_root, "00001.png")
+    image_name = os.path.join(ffhq_root, "00008.png")
     device_name = "cuda"
     config = {
         # FLAME
