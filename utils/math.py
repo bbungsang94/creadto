@@ -3,6 +3,45 @@ import torch
 import numpy as np
 
 
+def with_zeros(x):
+    """
+    Append a [0, 0, 0, 1] tensor to a [3, 4] tensor.
+
+    Parameter:
+    ---------
+    x: Tensor to be appended.
+
+    Return:
+    ------
+    Tensor after appending of shape [4,4]
+
+    """
+    ones = torch.tensor(
+        [[[0.0, 0.0, 0.0, 1.0]]], dtype=torch.float64
+    ).expand(x.shape[0], -1, -1).to(x.device)
+    ret = torch.cat((x, ones), dim=1)
+    return ret
+
+
+def pack(x):
+    """
+    Append zero tensors of shape [4, 3] to a batch of [4, 1] shape tensor.
+
+    Parameter:
+    ----------
+    x: A tensor of shape [batch_size, 4, 1]
+
+    Return:
+    ------
+    A tensor of shape [batch_size, 4, 4] after appending.
+
+    """
+    zeros43 = torch.zeros(
+        (x.shape[0], x.shape[1], 4, 3), dtype=torch.float64).to(x.device)
+    ret = torch.cat((zeros43, x), dim=3)
+    return ret
+
+
 def l2_distance(a, b):
     return torch.sqrt(((a - b) ** 2).sum(2)).mean(1).mean()
 

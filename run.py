@@ -4,9 +4,9 @@ from utils.io import get_loader
 
 
 def train():
-    from contents.pack import get_pack_gat_head
+    from contents.pack import get_pack_gat_body
     loader = get_loader()
-    kwargs = get_pack_gat_head(batch_size=loader.params['hyperparameters']['batch_size'],
+    kwargs = get_pack_gat_body(batch_size=loader.params['hyperparameters']['batch_size'],
                                shuffle=loader.params['hyperparameters']['shuffle'])
     kwargs.update({
         'loss': loader.get_module('loss', base=nn),
@@ -23,4 +23,4 @@ def demo():
 
 
 if __name__ == "__main__":
-    demo()
+    train()
