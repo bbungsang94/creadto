@@ -4,56 +4,74 @@ from viewer.base import Concrete
 from torch.utils.data import random_split
 
 
-def get_pack_gat_head(batch_size=1, shuffle=False):
+def get_pack_gat_head(batch_size=1, shuffle=False, num_workers=0):
     # 확실히 partial로 진행해도 되는 펑션임
-    # prepare config file
-    root = './external/flame/'
-    file = load_yaml(os.path.join(root, 'flame.yaml'))
     # load instance
-    from data.dataset import FlameParameter
-    from data.dataloader import FlameGraph
+    from data.dataset import FlameGraph
+    from data.dataloader import GraphLoader
     from models.recon import HeadGATDecoder
-    dataset = FlameParameter(**file['constants'])
+    dataset = FlameGraph(flame_path='./external/flame', tailor_root='./external/tailor', pre_check=False)
     train_dataset, eval_dataset = random_split(dataset, [0.7, 0.3])
-    train_loader = FlameGraph(dataset=train_dataset, flame_path='./external/flame', tailor_path='./external/tailor',
-                              batch_size=batch_size, shuffle=shuffle)
-    eval_loader = FlameGraph(dataset=eval_dataset, flame_path='./external/flame', tailor_path='./external/tailor',
-                             batch_size=batch_size, shuffle=shuffle)
+    train_loader = GraphLoader(dataset=train_dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers)
+    eval_loader = GraphLoader(dataset=eval_dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers)
     train_features, train_labels = next(iter(train_loader))
     model = HeadGATDecoder(n_of_node=train_features.num_nodes // train_features.num_graphs,
-                           node_dim=train_features.num_node_features // train_features.num_graphs,
-                           edge_dim=train_features.num_edge_features // train_features.num_graphs,
+                           node_dim=train_features.num_node_features,
+                           edge_dim=train_features.num_edge_features,
                            output_dim=5023)
     return {
         'model': model,
         'loaders': (train_loader, eval_loader),
+        'faces': dataset.faces,
         'viewer': Concrete()
     }
 
 
-def get_pack_gat_body(batch_size=1, shuffle=False):
+def get_pack_gat_head_regressor(batch_size=1, shuffle=False, num_workers=0):
+    # 확실히 partial로 진행해도 되는 펑션임
+    # load instance
+    from data.dataset import FlameParameter
+    from data.dataloader import TensorLoader
+    from models.mlp import BasicRegressor
+    dataset = FlameParameter(flame_path='./external/flame', tailor_root='./external/tailor', pre_check=False)
+    train_dataset, eval_dataset = random_split(dataset, [0.7, 0.3])
+    train_loader = TensorLoader(dataset=train_dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers)
+    eval_loader = TensorLoader(dataset=eval_dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers)
+    train_features, train_labels = next(iter(train_loader))
+    model = BasicRegressor(input_dim=train_features.shape[-1], output_dim=train_labels.shape[-1])
+    return {
+        'model': model,
+        'loaders': (train_loader, eval_loader),
+        'faces': dataset.faces,
+        'viewer': Concrete()
+    }
+
+def get_pack_gat_body(batch_size=1, shuffle=False, pin_memory=False, num_workers=0):
     # 확실히 partial로 진행해도 되는 펑션임
     # prepare config file
-    from data.dataset import SMPLParamter
-    from data.dataloader import SMPLGraph
+    from data.dataset import SMPLGraph
+    from data.dataloader import GraphLoader
     from models.recon import BodyGATDecoder
     # shape 400, pose 3, 55, trans 3
-    dataset = SMPLParamter()
+    dataset = SMPLGraph(length=6000, smpl_path='./external/smpl/SMPLX_FEMALE.pkl', tailor_root='./external/tailor',
+                            pre_check=False)
     train_dataset, eval_dataset = random_split(dataset, [0.7, 0.3])
-    train_loader = SMPLGraph(dataset=train_dataset, smpl_path='./external/smpl/SMPLX_NEUTRAL.pkl',
-                             tailor_path='./external/tailor', batch_size=batch_size, shuffle=shuffle)
-    eval_loader = SMPLGraph(dataset=eval_dataset, smpl_path='./external/smpl/SMPLX_NEUTRAL.pkl',
-                            tailor_path='./external/tailor', batch_size=batch_size, shuffle=shuffle)
-    train_features, train_labels = next(iter(train_loader))
+    train_loader = GraphLoader(dataset=train_dataset, batch_size=batch_size, shuffle=shuffle,
+                               pin_memory=pin_memory, num_workers=num_workers)
+    eval_loader = GraphLoader(dataset=eval_dataset, batch_size=batch_size, shuffle=shuffle,
+                              pin_memory=pin_memory, num_workers=num_workers)
+    train_features, _ = next(iter(train_loader))
     model = BodyGATDecoder(n_of_node=train_features.num_nodes // train_features.num_graphs,
-                           node_dim=train_features.num_node_features // train_features.num_graphs,
-                           edge_dim=train_features.num_edge_features // train_features.num_graphs,
-                           output_dim=5023)
+                           node_dim=train_features.num_node_features,
+                           edge_dim=train_features.num_edge_features,
+                           output_dim=10475)
     return {
         'model': model,
         'loaders': (train_loader, eval_loader),
+        'faces': dataset.faces,
         'viewer': Concrete()
     }
+
 
 def get_pack_head_texture(landmarker, batch_size=1, shuffle=False):
     from data.dataset import ImageDataset

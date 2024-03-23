@@ -7,7 +7,7 @@ class MultiHeadGATLayer(nn.Module):
     def __init__(self, in_dim, out_dim, edge_dim, num_heads=5, merge='cat'):
         super(MultiHeadGATLayer, self).__init__()
         self.heads = nn.ModuleList()
-        for i in range(num_heads):
+        for _ in range(num_heads):
             self.heads.append(GATConv(in_channels=in_dim, out_channels=out_dim, edge_dim=edge_dim))
         self.merge = merge
 

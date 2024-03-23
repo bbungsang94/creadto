@@ -211,13 +211,13 @@ def rodrigues(r: torch.Tensor):
     theta_dim = theta.shape[0]
     r_hat = r / theta
     cos = torch.cos(theta)
-    z_stick = torch.zeros(theta_dim, dtype=torch.float64).to(r.device)
+    z_stick = torch.zeros(theta_dim, dtype=torch.float32).to(r.device)
     m = torch.stack(
         (z_stick, -r_hat[:, 0, 2], r_hat[:, 0, 1], r_hat[:, 0, 2], z_stick,
          -r_hat[:, 0, 0], -r_hat[:, 0, 1], r_hat[:, 0, 0], z_stick), dim=1)
     m = torch.reshape(m, (-1, 3, 3))
-    i_cube = (torch.eye(3, dtype=torch.float64).unsqueeze(dim=0) \
-              + torch.zeros((theta_dim, 3, 3), dtype=torch.float64)).to(r.device)
+    i_cube = (torch.eye(3, dtype=torch.float32).unsqueeze(dim=0) \
+              + torch.zeros((theta_dim, 3, 3), dtype=torch.float32)).to(r.device)
     a = r_hat.permute(0, 2, 1)
     dot = torch.matmul(a, r_hat)
     r = cos * i_cube + (1 - cos) * dot + torch.sin(theta) * m

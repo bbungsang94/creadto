@@ -6,7 +6,6 @@ from models.gen import StyleGANAda
 from models.mlp import MappingNetwork
 from utils.io import load_mesh, make_dir
 from utils.math import l2_distance
-from utils.render import transform_pos_mvp, transform_points, DifferentiableRenderer, Renderer
 
 
 def demo_gat_head():
@@ -14,22 +13,44 @@ def demo_gat_head():
     from contents.pack import get_pack_gat_head
 
     pack = get_pack_gat_head(batch_size=16)
-    model_dict = torch.load(r'./external/pretrained/GATDecoder.pth')
+    model_dict = torch.load(r'./external/pretrained/NewHeadDecoder.pth')
+    pack['model'].load_state_dict(model_dict['model'])
+
+    train_features, train_labels = next(iter(pack['loaders'][0]))
+    pack['model'].eval()
+    with torch.no_grad():
+        output = pack['model'](train_features)
+        face = pack['faces']
+        for vertices in output['output']:
+            mesh = o3d.geometry.TriangleMesh()
+            mesh.vertices = o3d.utility.Vector3dVector(vertices.detach().numpy())
+            mesh.triangles = o3d.utility.Vector3iVector(face)
+
+            o3d.visualization.draw_geometries([mesh])
+
+
+def demo_get_body(gender: str):
+    import open3d as o3d
+    from contents.pack import get_pack_gat_body
+
+    pack = get_pack_gat_body(batch_size=16, num_workers=0)
+    model_dict = torch.load(r'./external/pretrained/BodyDecoder_' + gender + '.pth')
     pack['model'].load_state_dict(model_dict['model'])
     train_features, train_labels = next(iter(pack['loaders'][0]))
-    output = pack['model'](train_features)
+    pack['model'].eval()
+    with torch.no_grad():
+        output = pack['model'](train_features)
 
-    face = pack['loaders'][0].model.faces
-    for vertices in output['output']:
-        mesh = o3d.geometry.TriangleMesh()
-        mesh.vertices = o3d.utility.Vector3dVector(vertices.detach().numpy())
-        mesh.triangles = o3d.utility.Vector3iVector(face)
+        face = pack['faces']
+        loss = torch.nn.functional.mse_loss(output['output'], train_labels)
+        line = "average loss: %0.5f \n" % loss
+        print(line)
+        for vertices in output['output']:
+            mesh = o3d.geometry.TriangleMesh()
+            mesh.vertices = o3d.utility.Vector3dVector(vertices.detach().numpy())
+            mesh.triangles = o3d.utility.Vector3iVector(face)
 
-        pcd = o3d.geometry.PointCloud()
-        pcd.points = o3d.utility.Vector3dVector(vertices.detach().numpy())
-
-        o3d.visualization.draw_geometries([mesh])
-
+            o3d.visualization.draw_geometries([mesh])
 
 def demo_head_texture():
     from contents.pack import get_pack_head_texture
@@ -52,6 +73,7 @@ def demo_check_flame_mask():
     import torch.nn as nn
     import numpy as np
     import datetime
+    from utils.render import transform_pos_mvp, transform_points, DifferentiableRenderer, Renderer
 
     class PhotometricFitting(object):
         def __init__(self, config, device='cuda'):
@@ -397,6 +419,7 @@ def demo_mlp_texture():
     from torchvision.utils import save_image
     from utils.render import get_orthographic_view
     from utils.io import load_yaml
+    from utils.render import transform_pos_mvp, transform_points, DifferentiableRenderer, Renderer
 
     image_size = 512
     deca_size = 224

@@ -7,6 +7,7 @@ from typing import Tuple
 
 import torch
 import torch.nn as nn
+import torch.optim as optim
 from torch.utils.data import DataLoader
 from torch.optim.optimizer import Optimizer
 from tqdm import tqdm
@@ -34,6 +35,7 @@ class Base(metaclass=ABCMeta):
         else:
             self._metric = loss
         self._optimizer = optimizer
+        self._scheduler = optim.lr_scheduler.CosineAnnealingLR(self._optimizer, T_max=50, eta_min=0.0001)
         self._params = params
 
         # base
@@ -85,18 +87,23 @@ class Base(metaclass=ABCMeta):
                     # Update loss from the best model
                     weights = torch.load(os.path.join(self._params['path']['checkpoint'],
                                                       self.model_name, "Best", "BestModel.pth"))
-                    # self.best_loss = weights['loss']
-                    self.best_loss = 0.00002
+                    self.best_loss = weights['loss']
 
                 epochs = [int(x) for x in epochs if x != "Best"]
                 epoch = max(epochs)
                 ticks = os.listdir(os.path.join(self._params['path']['checkpoint'], self.model_name, "%08d" % epoch))
                 ticks = [int(x) for x in ticks]
-                tick = max(ticks)
+                tick = max(ticks) if len(ticks) != 0 else 0
                 full_path = os.path.join(self._params['path']['checkpoint'], self.model_name, "%08d" % epoch,
                                          "%08d" % tick)
-                model_file = os.listdir(full_path)[0]
-                self._load_model(os.path.join(full_path, model_file))
+                if os.path.exists(full_path):
+                    model_file = os.listdir(full_path)[0]
+                    self._load_model(os.path.join(full_path, model_file))
+                else:
+                    model_file = "BestModel"
+                    self._load_model(os.path.join(self._params['path']['checkpoint'],
+                                                  self.model_name, "Best", "BestModel.pth"))
+
                 print(print_message(message='Epoch: ' + str(epoch), padding=2))
                 print(print_message(message='Tick: ' + str(tick), padding=2))
                 print(print_message(message='Model Name: ' + model_file, padding=2))
@@ -190,12 +197,13 @@ class Base(metaclass=ABCMeta):
                     loss += self._loss(output['output'][itr], labels[itr])
             else:
                 loss = self._loss(output['output'], labels)
+                loss *= 10
             loss.backward()
             self._optimizer.step()
 
             running_loss += loss.item()
             avg_loss = running_loss / (i + 1)
-            line = "avg_loss: %.4f, ticks: %06d" % (avg_loss, i)
+            line = "lr: %.4f, ticks: %06d" % (self._optimizer.param_groups[0]['lr'], i)
             progress.set_description(line)
 
             if i % self._params['task']['log_interval'] == self._params['task']['log_interval'] - 1:
@@ -213,6 +221,7 @@ class Base(metaclass=ABCMeta):
                 self._write_log(epoch=index, tick=i, loss=avg_loss, mode=mode)
                 self._save_model(index, i, loss=avg_loss)
 
+        self._scheduler.step()
         return avg_loss
 
     def _run_eval_epoch(self, index, progress):
@@ -229,6 +238,7 @@ class Base(metaclass=ABCMeta):
                         loss += self._metric(output['output'][itr], labels[itr])
                 else:
                     loss = self._metric(output['output'], labels)
+                    loss *= 10
                 running_loss += loss.item()
                 avg_loss = running_loss / (i + 1)
                 line = "evaluation loss: %.4f, ticks: %06d" % (avg_loss, i)

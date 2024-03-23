@@ -17,7 +17,7 @@ def with_zeros(x):
 
     """
     ones = torch.tensor(
-        [[[0.0, 0.0, 0.0, 1.0]]], dtype=torch.float64
+        [[[0.0, 0.0, 0.0, 1.0]]], dtype=torch.float32
     ).expand(x.shape[0], -1, -1).to(x.device)
     ret = torch.cat((x, ones), dim=1)
     return ret
@@ -37,7 +37,7 @@ def pack(x):
 
     """
     zeros43 = torch.zeros(
-        (x.shape[0], x.shape[1], 4, 3), dtype=torch.float64).to(x.device)
+        (x.shape[0], x.shape[1], 4, 3), dtype=torch.float32).to(x.device)
     ret = torch.cat((zeros43, x), dim=3)
     return ret
 

@@ -1,3 +1,4 @@
+from typing import Any, Dict
 import torch
 import torch.nn as nn
 
@@ -5,6 +6,27 @@ from layers import normalize_2nd_moment
 from layers.basic import FullyConnectedLayer
 
 
+class BasicRegressor(nn.Module):
+    def __init__(self, input_dim, output_dim):
+        super().__init__()
+        self.encoder = nn.Sequential(
+            nn.Linear(input_dim, 256),
+            nn.ReLU(),
+            nn.Dropout(0.2),
+            nn.Linear(256, 512),
+            nn.ReLU(),
+            nn.Linear(512, 512),
+            nn.ReLU(),
+            nn.Linear(512, output_dim),
+            nn.Tanh()
+        )
+
+    def forward(self, x) -> Dict[str, Any]:
+        o = self.encoder(x)
+        result = {'output': o * 2,
+                  'latent': o}
+        return result
+    
 class MappingNetwork(nn.Module):
 
     def __init__(self, z_dim, w_dim, num_ws=None, num_layers=8, activation='lrelu', lr_multiplier=0.01, w_avg_beta=0.995):
