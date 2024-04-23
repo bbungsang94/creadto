@@ -26,6 +26,25 @@ def get_pack_gat_head(batch_size=1, shuffle=False, num_workers=0):
         'viewer': Concrete()
     }
 
+def get_pack_dim_head(batch_size=1, shuffle=False, pin_memory=False, num_workers=0):
+    from data.dataset import FlameTailor
+    from data.dataloader import TensorLoader
+    from models.recon import BasicDecoder
+    dataset = FlameTailor(length=25000, flame_root='./external/flame',
+                         tailor_root='./external/tailor', pre_check=False)
+    train_dataset, eval_dataset = random_split(dataset, [0.7, 0.3])
+    train_loader = TensorLoader(dataset=train_dataset, batch_size=batch_size, shuffle=shuffle,
+                                pin_memory=pin_memory, num_workers=num_workers)
+    eval_loader = TensorLoader(dataset=eval_dataset, batch_size=batch_size, shuffle=shuffle,
+                               pin_memory=pin_memory, num_workers=num_workers)
+    train_features, train_labels = next(iter(train_loader))
+    model = BasicDecoder(input_dim=train_features.shape[-1], output_dim=train_labels.shape[1], n_layers=3)
+    return {
+        'model': model,
+        'loaders': (train_loader, eval_loader),
+        'faces': dataset.faces,
+        'viewer': Concrete()
+    }
 
 def get_pack_gat_head_regressor(batch_size=1, shuffle=False, num_workers=0):
     # 확실히 partial로 진행해도 되는 펑션임
@@ -33,7 +52,7 @@ def get_pack_gat_head_regressor(batch_size=1, shuffle=False, num_workers=0):
     from data.dataset import FlameParameter
     from data.dataloader import TensorLoader
     from models.mlp import BasicRegressor
-    dataset = FlameParameter(flame_path='./external/flame', tailor_root='./external/tailor', pre_check=False)
+    dataset = FlameParameter(flame_root='./external/flame', tailor_root='./external/tailor', pre_check=False)
     train_dataset, eval_dataset = random_split(dataset, [0.7, 0.3])
     train_loader = TensorLoader(dataset=train_dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers)
     eval_loader = TensorLoader(dataset=eval_dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers)
@@ -46,6 +65,26 @@ def get_pack_gat_head_regressor(batch_size=1, shuffle=False, num_workers=0):
         'viewer': Concrete()
     }
 
+def get_pack_dim_body(gender, batch_size=1, shuffle=False, pin_memory=False, num_workers=0):
+    from data.dataset import SMPLTailor
+    from data.dataloader import TensorLoader
+    from models.recon import BasicDecoder
+    dataset = SMPLTailor(length=25000, smpl_root='./external/smpl', gender=gender,
+                         tailor_root='./external/tailor', pre_check=False)
+    train_dataset, eval_dataset = random_split(dataset, [0.7, 0.3])
+    train_loader = TensorLoader(dataset=train_dataset, batch_size=batch_size, shuffle=shuffle,
+                                pin_memory=pin_memory, num_workers=num_workers)
+    eval_loader = TensorLoader(dataset=eval_dataset, batch_size=batch_size, shuffle=shuffle,
+                               pin_memory=pin_memory, num_workers=num_workers)
+    train_features, train_labels = next(iter(train_loader))
+    model = BasicDecoder(input_dim=train_features.shape[-1], output_dim=train_labels.shape[1], n_layers=3)
+    return {
+        'model': model,
+        'loaders': (train_loader, eval_loader),
+        'faces': dataset.faces,
+        'viewer': Concrete()
+    }
+    
 def get_pack_gat_body(batch_size=1, shuffle=False, pin_memory=False, num_workers=0):
     # 확실히 partial로 진행해도 되는 펑션임
     # prepare config file
@@ -53,7 +92,7 @@ def get_pack_gat_body(batch_size=1, shuffle=False, pin_memory=False, num_workers
     from data.dataloader import GraphLoader
     from models.recon import BodyGATDecoder
     # shape 400, pose 3, 55, trans 3
-    dataset = SMPLGraph(length=6000, smpl_path='./external/smpl/SMPLX_FEMALE.pkl', tailor_root='./external/tailor',
+    dataset = SMPLGraph(length=4000, smpl_path='./external/smpl/SMPLX_FEMALE.pkl', tailor_root='./external/tailor',
                             pre_check=False)
     train_dataset, eval_dataset = random_split(dataset, [0.7, 0.3])
     train_loader = GraphLoader(dataset=train_dataset, batch_size=batch_size, shuffle=shuffle,

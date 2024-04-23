@@ -4,9 +4,9 @@ from utils.io import get_loader
 
 
 def train():
-    from contents.pack import get_pack_gat_body
+    from contents.pack import get_pack_dim_head
     loader = get_loader()
-    kwargs = get_pack_gat_body(batch_size=loader.params['hyperparameters']['batch_size'],
+    kwargs = get_pack_dim_head(batch_size=loader.params['hyperparameters']['batch_size'],
                                shuffle=loader.params['hyperparameters']['shuffle'],
                                num_workers=loader.params['task']['num_workers'])
     del kwargs['faces']
@@ -20,8 +20,8 @@ def train():
 
 
 def demo():
-    from contents.demo import demo_get_body
-    demo_get_body("female")
+    from contents.demo import demo_gat_head
+    demo_gat_head()
 
 
 if __name__ == "__main__":

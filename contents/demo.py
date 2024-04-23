@@ -10,10 +10,10 @@ from utils.math import l2_distance
 
 def demo_gat_head():
     import open3d as o3d
-    from contents.pack import get_pack_gat_head
+    from contents.pack import get_pack_dim_head
 
-    pack = get_pack_gat_head(batch_size=16)
-    model_dict = torch.load(r'./external/pretrained/NewHeadDecoder.pth')
+    pack = get_pack_dim_head(batch_size=16)
+    model_dict = torch.load(r'./external/pretrained/HeadDecoder.pth')
     pack['model'].load_state_dict(model_dict['model'])
 
     train_features, train_labels = next(iter(pack['loaders'][0]))
@@ -21,6 +21,9 @@ def demo_gat_head():
     with torch.no_grad():
         output = pack['model'](train_features)
         face = pack['faces']
+        loss = torch.nn.functional.mse_loss(output['output'], train_labels)
+        line = "average loss: %0.5f \n" % loss
+        print(line)
         for vertices in output['output']:
             mesh = o3d.geometry.TriangleMesh()
             mesh.vertices = o3d.utility.Vector3dVector(vertices.detach().numpy())
@@ -31,9 +34,9 @@ def demo_gat_head():
 
 def demo_get_body(gender: str):
     import open3d as o3d
-    from contents.pack import get_pack_gat_body
+    from contents.pack import get_pack_dim_body
 
-    pack = get_pack_gat_body(batch_size=16, num_workers=0)
+    pack = get_pack_dim_body(gender=gender, batch_size=16, num_workers=0)
     model_dict = torch.load(r'./external/pretrained/BodyDecoder_' + gender + '.pth')
     pack['model'].load_state_dict(model_dict['model'])
     train_features, train_labels = next(iter(pack['loaders'][0]))
@@ -46,11 +49,13 @@ def demo_get_body(gender: str):
         line = "average loss: %0.5f \n" % loss
         print(line)
         for vertices in output['output']:
-            mesh = o3d.geometry.TriangleMesh()
-            mesh.vertices = o3d.utility.Vector3dVector(vertices.detach().numpy())
-            mesh.triangles = o3d.utility.Vector3iVector(face)
+            pcd = o3d.geometry.PointCloud()
+            pcd.points = o3d.utility.Vector3dVector(vertices.detach().numpy())
+            # mesh = o3d.geometry.TriangleMesh()
+            # mesh.vertices = o3d.utility.Vector3dVector(vertices.detach().numpy())
+            # mesh.triangles = o3d.utility.Vector3iVector(face)
 
-            o3d.visualization.draw_geometries([mesh])
+            o3d.visualization.draw_geometries([pcd])
 
 def demo_head_texture():
     from contents.pack import get_pack_head_texture

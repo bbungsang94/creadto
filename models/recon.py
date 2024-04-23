@@ -8,6 +8,42 @@ from torch_geometric.data import Data
 from layers.graph import MultiHeadGATLayer
 
 
+class BasicDecoder(nn.Module):
+    def __init__(self, input_dim, output_dim, n_layers=5):
+        super().__init__()
+        gap = (output_dim - input_dim) // n_layers
+        x = input_dim + gap
+        y = x + gap
+        body = [
+            nn.Linear(input_dim, x),
+            nn.BatchNorm1d(x),
+            nn.ReLU(),
+            nn.Dropout(0.2)
+        ]
+        for _ in range(n_layers - 1):
+            layer = [
+                nn.Linear(x, y),
+                nn.ReLU(),
+                nn.Dropout(0.2)
+                ]
+            body += layer
+            x = y
+            y = x + gap
+        self.body = nn.Sequential(*body)
+        self.heads = nn.ModuleList()
+        for _ in range(3):
+            self.heads.append(nn.Linear(x, output_dim))
+        
+    def forward(self, x) -> Dict[str, Any]:
+        z = self.body(x)
+        o = []
+        for head in self.heads:
+            #o.append(F.tanh(head(z)))
+            o.append(head(z))
+        result = {'output': torch.stack(o, dim=2),
+                  'latent': z}
+        return result
+    
 class HeadGATDecoder(nn.Module):
     def __init__(self, n_of_node, node_dim, edge_dim, output_dim, num_heads=5, merge='cat', model_path: str = None):
         super().__init__()
