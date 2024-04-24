@@ -117,16 +117,16 @@ class BodyGATDecoder(nn.Module):
 
 class DimensionHuman:
     def __init__(self, head=True):
-        female_model = torch.jit.load("./pretrained/recon/BodyDecoder-f47-10475-v1.pt")
+        female_model = torch.jit.load("./creadto/pretrained/recon/BodyDecoder-f47-10475-v1.pt")
         female_model.eval()
-        male_model = torch.jit.load("./pretrained/recon/BodyDecoder-m47-10475-v1.pt")
+        male_model = torch.jit.load("./creadto/pretrained/recon/BodyDecoder-m47-10475-v1.pt")
         male_model.eval()
         self.models = {
             'body_female': female_model,
             'body_male': male_model
         }
         if head:
-            head_model = torch.jit.load("./pretrained/recon/HeadDecoder-x22-5023-v1.pt")
+            head_model = torch.jit.load("./creadto/pretrained/recon/HeadDecoder-x22-5023-v1.pt")
             head_model.eval()
             self.models['head'] = head_model
 
