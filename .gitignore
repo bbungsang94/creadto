@@ -166,3 +166,4 @@ cython_debug/
 /creadto/pretrained/recon/BodyDecoder-f47-10475-v1.pt
 /creadto/pretrained/recon/BodyDecoder-m47-10475-v1.pt
 /creadto/pretrained/recon/HeadDecoder-x22-5023-v1.pt
+/.vscode
