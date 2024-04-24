@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 
-import math
+from creadto.utils import math
 from numpy import linalg
 
 

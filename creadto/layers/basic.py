@@ -2,7 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from layers import activation_funcs
+from creadto.layers import activation_funcs
 
 
 class FullyConnectedLayer(nn.Module):

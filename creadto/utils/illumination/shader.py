@@ -2,9 +2,9 @@
 
 import torch.nn as nn
 
-from utils.illumination.lighting import PointLight
-from utils.illumination.materials import Materials
-from utils.illumination.shading import apply_lighting
+from creadto.utils.illumination.lighting import PointLight
+from creadto.utils.illumination.utils import Materials
+from creadto.utils.illumination.shading import apply_lighting
 
 
 class SoftPhongShader(nn.Module):

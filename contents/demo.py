@@ -1,11 +1,11 @@
 import torch
 from easydict import EasyDict
 
-from external.flame.flame import FLAME, FLAMETex
-from models.gen import StyleGANAda
-from models.mlp import MappingNetwork
-from utils.io import load_mesh, make_dir
-from utils.math import l2_distance
+from creadto.external.flame.flame import FLAME, FLAMETex
+from creadto.models.gen import StyleGANAda
+from creadto.models.mlp import MappingNetwork
+from creadto.utils.io import load_mesh, make_dir
+from creadto.utils.math import l2_distance
 
 
 def demo_gat_head():
@@ -78,7 +78,7 @@ def demo_check_flame_mask():
     import torch.nn as nn
     import numpy as np
     import datetime
-    from utils.render import transform_pos_mvp, transform_points, DifferentiableRenderer, Renderer
+    from creadto.utils.render import Renderer
 
     class PhotometricFitting(object):
         def __init__(self, config, device='cuda'):
@@ -422,9 +422,9 @@ def demo_mlp_texture():
     import torch
     import pickle
     from torchvision.utils import save_image
-    from utils.render import get_orthographic_view
-    from utils.io import load_yaml
-    from utils.render import transform_pos_mvp, transform_points, DifferentiableRenderer, Renderer
+    from creadto.utils.render import get_orthographic_view
+    from creadto.utils.io import load_yaml
+    from creadto.utils.render import transform_pos_mvp, transform_points, DifferentiableRenderer
 
     image_size = 512
     deca_size = 224

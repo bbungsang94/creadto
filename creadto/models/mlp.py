@@ -2,8 +2,8 @@ from typing import Any, Dict
 import torch
 import torch.nn as nn
 
-from layers import normalize_2nd_moment
-from layers.basic import FullyConnectedLayer
+from creadto.layers import normalize_2nd_moment
+from creadto.layers.basic import FullyConnectedLayer
 
 
 class BasicRegressor(nn.Module):

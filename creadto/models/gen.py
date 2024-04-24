@@ -1,13 +1,10 @@
 from typing import Dict, Any
 
 import numpy as np
-import torch
 import torch.nn as nn
 
-from layers import normalize_2nd_moment
-from layers.basic import FullyConnectedLayer
-from layers.vision import SynthesisPrologue, SynthesisBlock
-from models.mlp import MappingNetwork
+from creadto.layers.vision import SynthesisPrologue, SynthesisBlock
+from creadto.models.mlp import MappingNetwork
 
 
 class HeadVAE(nn.Module):

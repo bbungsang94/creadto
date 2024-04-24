@@ -1,6 +1,6 @@
 from torch import optim, nn
-from trainer.gpu import SingleGPURunner
-from utils.io import get_loader
+from creadto.trainer.gpu import SingleGPURunner
+from creadto.utils.io import get_loader
 
 
 def train():

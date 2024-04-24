@@ -6,8 +6,8 @@ import psutil
 import torch
 from torch_geometric.data import Data
 
-from utils.log import print_message
-from utils.visualize import draw_graph
+from creadto.utils.log import print_message
+from creadto.utils.visualize import draw_graph
 
 
 def summary_graph(graph: Data, draw=False):
@@ -62,7 +62,7 @@ def summary_device(bypass=False):
 
     print(print_message(message='', line=''))
     print(print_message(message='Creadto Inc.', padding=5, center=True))
-    print(print_message(message='sangh.an@creadto.com', padding=5, center=True))
+    print(print_message(message='sangh.an@CreadtoLibrary.com', padding=5, center=True))
     print(print_message(message='', line='='))
     return device
 

@@ -1,12 +1,12 @@
 from typing import Dict, Any
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
 from torch_geometric.data import Data
-
-from layers.graph import MultiHeadGATLayer
+from skimage.transform import estimate_transform, warp
 
 
 class BasicDecoder(nn.Module):
@@ -49,6 +49,7 @@ class BasicDecoder(nn.Module):
 
 class HeadGATDecoder(nn.Module):
     def __init__(self, n_of_node, node_dim, edge_dim, output_dim, num_heads=5, merge='cat', model_path: str = None):
+        from creadto.layers import MultiHeadGATLayer
         super().__init__()
         self.encoder = MultiHeadGATLayer(in_dim=node_dim, out_dim=16, edge_dim=edge_dim,
                                          num_heads=num_heads, merge=merge)
@@ -81,6 +82,7 @@ class HeadGATDecoder(nn.Module):
 
 class BodyGATDecoder(nn.Module):
     def __init__(self, n_of_node, node_dim, edge_dim, output_dim, num_heads=5, merge='cat'):
+        from creadto.layers import MultiHeadGATLayer
         super().__init__()
         self.encoder = MultiHeadGATLayer(in_dim=node_dim, out_dim=16, edge_dim=edge_dim, num_heads=num_heads,
                                          merge=merge)
@@ -138,4 +140,32 @@ class DimensionHuman:
                 head_result = self.models['head']
                 head_vertex = head_result['output']
                 output['head_vertex'] = head_vertex
+        return output
+
+
+class DetailFaceModel:
+    def __init__(self):
+        from creadto.external.deca.decalib import DECA
+        from creadto.external.deca.decalib import cfg as deca_cfg
+        from creadto.models.det import FaceAlignmentLandmarker
+
+        self.detector = FaceAlignmentLandmarker()
+        self.reconstructor = DECA(config=deca_cfg)
+        self.crop_size = 224
+        self.template = np.array([[0, 0], [0, self.crop_size - 1], [self.crop_size - 1, 0]])
+
+    def __call__(self, image: torch.Tensor):
+        face_result = self.detector(image.permute(1, 2, 0))
+        tform = estimate_transform('similarity', face_result['points'], self.template)
+        image = image / 255.
+        image = warp(image, tform.inverse, output_shape=(self.crop_size, self.crop_size))
+        image = image.transpose(2, 0, 1)
+
+        with torch.no_grad():
+            embedding = self.reconstructor.encode(image)
+            o, v = self.reconstructor.decode(embedding)
+            output = o
+            output['latent'] = embedding
+            output['visualize'] = v
+
         return output

@@ -2,9 +2,9 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from layers import clamp_gain, activation_funcs, identity, modulated_conv2d
-from layers.basic import FullyConnectedLayer
-from layers.utils import SmoothUpsample
+from creadto.layers import clamp_gain, activation_funcs, identity, modulated_conv2d
+from creadto.layers.basic import FullyConnectedLayer
+from creadto.layers.utils import SmoothUpsample
 
 
 class SynthesisPrologue(torch.nn.Module):

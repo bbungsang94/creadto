@@ -3,7 +3,7 @@ import os
 
 import pandas as pd
 
-from utils.io import make_dir
+from creadto.utils.io import make_dir
 
 
 class CSVWriter:

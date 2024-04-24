@@ -4,7 +4,7 @@ import torch
 import numpy as np
 from torch import nn
 import torch.nn.functional as F
-from utils.illumination.utils import convert_to_tensors_and_broadcast
+from creadto.utils.illumination.utils import convert_to_tensors_and_broadcast
 
 
 class PointLight(nn.Module):

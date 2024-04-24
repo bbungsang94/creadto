@@ -4,10 +4,7 @@ from typing import Union, Tuple
 
 import cv2
 import numpy as np
-import torch
-import torch.nn as nn
 from torchvision.transforms import transforms
-
 
 
 class FaceAlignmentLandmarker:
@@ -27,7 +24,7 @@ class FaceAlignmentLandmarker:
                             [center[0] + size / 2, center[1] - size / 2]])
         return src_pts
 
-    def run(self, image):
+    def __call__(self, image):
         """
         image: 0-255, uint8, rgb, [h, w, 3]
         return: detected box list
@@ -109,7 +106,7 @@ class MediaPipeLandmarker:
         return idx_to_coordinates
 
     def draw(self, image, landmark, line=True, sep=False, draw_full=True):
-        from external.mediapipe.convention import get_478_indexes, get_68_indexes, Mapper
+        from creadto.external.mediapipe.convention import get_478_indexes, get_68_indexes, Mapper
 
         mapper = Mapper(bypass=draw_full)
         pixel = self.to_pixel(image, landmark.face_landmarks)

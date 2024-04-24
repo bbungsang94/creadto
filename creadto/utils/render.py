@@ -8,9 +8,9 @@ from pytorch3d.renderer import rasterize_meshes
 from pytorch3d.structures import Meshes
 from torchvision.ops import masks_to_boxes
 
-from utils.camera import OrthographicCamera
-from utils.illumination.shader import SoftPhongShader
-from utils.io import save_mesh, load_mesh
+from creadto.utils.camera import OrthographicCamera
+from creadto.utils.illumination.shader import SoftPhongShader
+from creadto.utils.io import save_mesh
 
 
 class Pytorch3dRasterizer(nn.Module):

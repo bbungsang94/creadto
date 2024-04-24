@@ -1,7 +1,7 @@
 import torch
 
-from trainer.base import Base
-from utils.report import summary_device
+from creadto.trainer.base import Base
+from creadto.utils.report import summary_device
 
 
 class SingleGPURunner(Base):
