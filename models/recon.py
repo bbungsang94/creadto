@@ -3,13 +3,14 @@ from typing import Dict, Any
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch import Tensor
 from torch_geometric.data import Data
 
 from layers.graph import MultiHeadGATLayer
 
 
 class BasicDecoder(nn.Module):
-    def __init__(self, input_dim, output_dim, n_layers=5):
+    def __init__(self, input_dim, output_dim, n_layers=3):
         super().__init__()
         gap = (output_dim - input_dim) // n_layers
         x = input_dim + gap
@@ -25,7 +26,7 @@ class BasicDecoder(nn.Module):
                 nn.Linear(x, y),
                 nn.ReLU(),
                 nn.Dropout(0.2)
-                ]
+            ]
             body += layer
             x = y
             y = x + gap
@@ -33,17 +34,19 @@ class BasicDecoder(nn.Module):
         self.heads = nn.ModuleList()
         for _ in range(3):
             self.heads.append(nn.Linear(x, output_dim))
-        
-    def forward(self, x) -> Dict[str, Any]:
+        self.dim_guide = None
+
+    def forward(self, x) -> Dict[str, Tensor]:
         z = self.body(x)
         o = []
         for head in self.heads:
-            #o.append(F.tanh(head(z)))
+            # o.append(F.tanh(head(z)))
             o.append(head(z))
         result = {'output': torch.stack(o, dim=2),
                   'latent': z}
         return result
-    
+
+
 class HeadGATDecoder(nn.Module):
     def __init__(self, n_of_node, node_dim, edge_dim, output_dim, num_heads=5, merge='cat', model_path: str = None):
         super().__init__()
@@ -79,7 +82,8 @@ class HeadGATDecoder(nn.Module):
 class BodyGATDecoder(nn.Module):
     def __init__(self, n_of_node, node_dim, edge_dim, output_dim, num_heads=5, merge='cat'):
         super().__init__()
-        self.encoder = MultiHeadGATLayer(in_dim=node_dim, out_dim=16, edge_dim=edge_dim, num_heads=num_heads, merge=merge)
+        self.encoder = MultiHeadGATLayer(in_dim=node_dim, out_dim=16, edge_dim=edge_dim, num_heads=num_heads,
+                                         merge=merge)
         latent_len = n_of_node * 16 * num_heads
         self.node_regressor = nn.Sequential(
             nn.ReLU(),
@@ -107,3 +111,31 @@ class BodyGATDecoder(nn.Module):
         result = {'output': torch.stack(o, dim=2),
                   'latent': z}
         return result
+
+
+class DimensionHuman:
+    def __init__(self, head=True):
+        female_model = torch.jit.load("./pretrained/recon/BodyDecoder-f47-10475-v1.pt")
+        female_model.eval()
+        male_model = torch.jit.load("./pretrained/recon/BodyDecoder-m47-10475-v1.pt")
+        male_model.eval()
+        self.models = {
+            'body_female': female_model,
+            'body_male': male_model
+        }
+        if head:
+            head_model = torch.jit.load("./pretrained/recon/HeadDecoder-x22-5023-v1.pt")
+            head_model.eval()
+            self.models['head'] = head_model
+
+    def __call__(self, gender: str, x_body: torch.Tensor, x_head: torch.Tensor = None):
+        output = dict()
+        with torch.no_grad():
+            body_result = self.models['body_' + gender.lower()](x_body)
+            body_vertex = body_result['output']
+            output['body_vertex'] = body_vertex
+            if "head" in self.models and x_head is not None:
+                head_result = self.models['head']
+                head_vertex = head_result['output']
+                output['head_vertex'] = head_vertex
+        return output

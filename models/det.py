@@ -6,12 +6,46 @@ import cv2
 import numpy as np
 import torch
 import torch.nn as nn
-from mediapipe.framework.formats import landmark_pb2
-from mediapipe.tasks import python
-from mediapipe.tasks.python import vision
 from torchvision.transforms import transforms
 
-from external.mediapipe.convention import get_478_indexes, get_68_indexes, Mapper
+
+
+class FaceAlignmentLandmarker:
+    def __init__(self):
+        import face_alignment
+
+        self.scale_factor = 1.25
+        self.model = face_alignment.FaceAlignment(face_alignment.LandmarksType.TWO_D, flip_input=False)
+
+    def to_point(self, left, right, top, bottom):
+        old_size = (right - left + bottom - top) / 2 * 1.1
+        center = np.array([right - (right - left) / 2.0,
+                           bottom - (bottom - top) / 2.0])
+
+        size = int(old_size * self.scale_factor)
+        src_pts = np.array([[center[0] - size / 2, center[1] - size / 2], [center[0] - size / 2, center[1] + size / 2],
+                            [center[0] + size / 2, center[1] - size / 2]])
+        return src_pts
+
+    def run(self, image):
+        """
+        image: 0-255, uint8, rgb, [h, w, 3]
+        return: detected box list
+        """
+        output = {'bbox': None, 'points': None, 'type': 'kpt68'}
+        out = self.model.get_landmarks(image)
+        if out is not None:
+            kpt = out[0].squeeze()
+            left = np.min(kpt[:, 0])
+            right = np.max(kpt[:, 0])
+            top = np.min(kpt[:, 1])
+            bottom = np.max(kpt[:, 1])
+            bbox = [left, top, right, bottom]
+
+            output['points'] = self.to_point(left, right, top, bottom)
+            output['bbox'] = bbox
+
+        return output
 
 
 class BasicFacialLandmarker:
@@ -35,6 +69,9 @@ class BasicFacialLandmarker:
 
 class MediaPipeLandmarker:
     def __init__(self, model_path: str, visibility: float, presence: float):
+        from mediapipe.tasks import python
+        from mediapipe.tasks.python import vision
+
         base_options = python.BaseOptions(model_asset_path=model_path)
         options = vision.FaceLandmarkerOptions(base_options=base_options,
                                                output_face_blendshapes=False,
@@ -49,6 +86,8 @@ class MediaPipeLandmarker:
         return landmark
 
     def to_pixel(self, image, face_landmarks):
+        from mediapipe.framework.formats import landmark_pb2
+
         image = np.copy(image)
         image_rows, image_cols, _ = image.shape
 
@@ -70,6 +109,8 @@ class MediaPipeLandmarker:
         return idx_to_coordinates
 
     def draw(self, image, landmark, line=True, sep=False, draw_full=True):
+        from external.mediapipe.convention import get_478_indexes, get_68_indexes, Mapper
+
         mapper = Mapper(bypass=draw_full)
         pixel = self.to_pixel(image, landmark.face_landmarks)
         indexes = get_478_indexes() if draw_full else get_68_indexes()
