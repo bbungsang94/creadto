@@ -1,3 +1,4 @@
+import torch
 from torch import optim, nn
 from creadto.trainer.gpu import SingleGPURunner
 from creadto.utils.io import get_loader
@@ -24,6 +25,16 @@ def demo():
     demo_gat_head()
 
 
+class ImageClassificationCollator:
+    def __init__(self, feature_extractor):
+        
+ 
+    def __call__(self, batch):
+        encodings = self.feature_extractor([x[0] for x in batch], return_tensors='pt')
+        encodings['labels'] = torch.tensor([x[1] for x in batch], dtype=torch.long)
+        return encodings 
+    
+    
 if __name__ == "__main__":
     import os
     os.environ['CUDA_LAUNCH_BLOCKING'] = "1"

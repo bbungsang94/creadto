@@ -3,10 +3,22 @@ import math
 from typing import Union, Tuple
 
 import cv2
+import torch
 import numpy as np
 from torchvision.transforms import transforms
 
-
+class GenderClassification:
+    def __init__(self):
+        from transformers import AutoImageProcessor, AutoModelForImageClassification
+        self.label = ['female', 'male']
+        self.encoder = AutoImageProcessor.from_pretrained("rizvandwiki/gender-classification")
+        self.model = AutoModelForImageClassification.from_pretrained("rizvandwiki/gender-classification")
+        
+    def __call__(self, x):
+        o = self.model(x)
+        output = [self.label[torch.argmax(i)] for i in o]
+        return output
+        
 class FaceAlignmentLandmarker:
     def __init__(self):
         import face_alignment
@@ -106,7 +118,7 @@ class MediaPipeLandmarker:
         return idx_to_coordinates
 
     def draw(self, image, landmark, line=True, sep=False, draw_full=True):
-        from creadto.external.mediapipe.convention import get_478_indexes, get_68_indexes, Mapper
+        from creadto._external.mediapipe.convention import get_478_indexes, get_68_indexes, Mapper
 
         mapper = Mapper(bypass=draw_full)
         pixel = self.to_pixel(image, landmark.face_landmarks)
@@ -167,3 +179,4 @@ class MediaPipeLandmarker:
         x_px = min(math.floor(normalized_x * image_width), image_width - 1)
         y_px = min(math.floor(normalized_y * image_height), image_height - 1)
         return x_px, y_px
+

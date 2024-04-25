@@ -7,7 +7,7 @@ from torch.utils.data import Dataset
 from torchvision.transforms import transforms
 from tqdm import tqdm
 
-from creadto.external.tailor.tailor import GraphTailor
+from creadto._external.tailor.tailor import GraphTailor
 
 
 class ImageDataset(Dataset):
@@ -44,7 +44,7 @@ class ImageDataset(Dataset):
 
 class FlameGraph(Dataset):
     def __init__(self, flame_path, tailor_root, root=None, length=1000, random_seed=241578135, pre_check=False):
-        from creadto.external.flame.flame import FLAME
+        from creadto._external.flame.flame import FLAME
         from easydict import EasyDict
         from creadto.utils.io import load_yaml
         """
@@ -126,7 +126,7 @@ class FlameGraph(Dataset):
 
 class FlameTailor(Dataset):
     def __init__(self, flame_root, tailor_root, length=10000, random_seed=241578135, pre_check=False):
-        from creadto.external.flame.flame import FLAME
+        from creadto._external.flame.flame import FLAME
         """
         :param root: pth or npy files concluding parameters, landmarks, dimensions
         :param length: data length for training
@@ -194,7 +194,7 @@ class FlameTailor(Dataset):
     
 class SMPLGraph(Dataset):
     def __init__(self, smpl_path, tailor_root, root=None, length=10000, random_seed=987892, pre_check=False):
-        from creadto.external.smpl.smpl import SMPL
+        from creadto._external.smpl.smpl import SMPL
         """
         :param root: pth or npy files concluding parameters, landmarks, dimensions
         :param length: data length for training
@@ -276,7 +276,7 @@ class SMPLGraph(Dataset):
 
 class SMPLTailor(Dataset):
     def __init__(self, smpl_root, tailor_root, gender, root=None, length=10000, random_seed=45124, pre_check=False):
-        from creadto.external.smpl.smpl import SMPL
+        from creadto._external.smpl.smpl import SMPL
         torch.manual_seed(random_seed)
         if root:
             # If you have pth or npy files concluding parameters, landmarks, dimensions, load all.

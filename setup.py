@@ -12,7 +12,7 @@ setup(
     author="Simon Anderson",
     url="www.creadto.com",
     description="Creadto AI Research library for Computer vision and Computer graphics",
-    packages=setuptools.find_packages(),
+    packages=find_packages(),
     python_requires=">=3.10",
     install_requires=[
     ],

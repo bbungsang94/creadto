@@ -160,7 +160,7 @@ cython_debug/
 #.idea/
 /.idea
 /data
-/creadto/external
+/creadto/_external
 /dump
 /output
 /creadto/pretrained/recon/BodyDecoder-f47-10475-v1.pt

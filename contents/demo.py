@@ -1,7 +1,7 @@
 import torch
 from easydict import EasyDict
 
-from creadto.external.flame.flame import FLAME, FLAMETex
+from creadto._external.flame.flame import FLAME, FLAMETex
 from creadto.models.gen import StyleGANAda
 from creadto.models.mlp import MappingNetwork
 from creadto.utils.io import load_mesh, make_dir
@@ -13,7 +13,7 @@ def demo_gat_head():
     from contents.pack import get_pack_dim_head
 
     pack = get_pack_dim_head(batch_size=16)
-    model_dict = torch.load(r'./external/pretrained/HeadDecoder.pth')
+    model_dict = torch.load(r'./_external/pretrained/HeadDecoder.pth')
     pack['model'].load_state_dict(model_dict['model'])
 
     train_features, train_labels = next(iter(pack['loaders'][0]))
@@ -37,7 +37,7 @@ def demo_get_body(gender: str):
     from contents.pack import get_pack_dim_body
 
     pack = get_pack_dim_body(gender=gender, batch_size=16, num_workers=0)
-    model_dict = torch.load(r'./external/pretrained/BodyDecoder_' + gender + '.pth')
+    model_dict = torch.load(r'./_external/pretrained/BodyDecoder_' + gender + '.pth')
     pack['model'].load_state_dict(model_dict['model'])
     train_features, train_labels = next(iter(pack['loaders'][0]))
     pack['model'].eval()
@@ -59,7 +59,7 @@ def demo_get_body(gender: str):
 
 def demo_head_texture():
     from contents.pack import get_pack_head_texture
-    model = torch.jit.load(r'./external/pretrained/BasicFacialLandmarker.pth')
+    model = torch.jit.load(r'./_external/pretrained/BasicFacialLandmarker.pth')
     pack = get_pack_head_texture(batch_size=16, shuffle=True, landmarker=model)
 
     images = next(iter(pack['loaders'][0]))
@@ -117,7 +117,7 @@ def demo_check_flame_mask():
             return vis_landmarks
 
         def _setup_renderer(self):
-            mesh_file = './external/flame/head_template.obj'
+            mesh_file = './_external/flame/head_template.obj'
             self.render = Renderer(self.image_size, obj_filename=mesh_file).to(self.device)
 
         def optimize(self, images, landmarks, image_masks, savefolder=None):
@@ -364,11 +364,11 @@ def demo_check_flame_mask():
     device_name = "cuda"
     config = {
         # FLAME
-        'flame_model_path': './external/flame/generic_model.pkl',  # acquire it from FLAME project page
-        'static_landmark_embedding_path': './external/flame/flame_static_embedding.pkl',
-        'dynamic_landmark_embedding_path': './external/flame/flame_dynamic_embedding.npy',
-        'flame_lmk_embedding_path': './external/flame/landmark_embedding.npy',
-        'tex_space_path': './external/flame/FLAME_texture.npz',  # acquire it from FLAME project page
+        'flame_model_path': './_external/flame/generic_model.pkl',  # acquire it from FLAME project page
+        'static_landmark_embedding_path': './_external/flame/flame_static_embedding.pkl',
+        'dynamic_landmark_embedding_path': './_external/flame/flame_dynamic_embedding.npy',
+        'flame_lmk_embedding_path': './_external/flame/landmark_embedding.npy',
+        'tex_space_path': './_external/flame/FLAME_texture.npz',  # acquire it from FLAME project page
         'camera_params': 3,
         'shape_params': 100,
         'expression_params': 50,
@@ -448,13 +448,13 @@ def demo_mlp_texture():
 
     def visualize_rendering():
 
-        config = load_yaml('./external/clipface/clipface.yaml')
+        config = load_yaml('./_external/clipface/clipface.yaml')
 
         # Initialize the models
-        flame_params = "external/clipface/flame_params.pkl"
-        deca_warped_path = 'external/clipface/sample_deca.pkl'
-        tex_mapper_ckpt = 'external/clipface/mona_lisa.pt'  # TODO: Update checkpoint path here
-        w_init_pth = 'external/clipface/clip_latents_val/w_001368_5907.pt'  # TODO: Update texture latent code path here
+        flame_params = "_external/clipface/flame_params.pkl"
+        deca_warped_path = '_external/clipface/sample_deca.pkl'
+        tex_mapper_ckpt = '_external/clipface/mona_lisa.pt'  # TODO: Update checkpoint path here
+        w_init_pth = '_external/clipface/clip_latents_val/w_001368_5907.pt'  # TODO: Update texture latent code path here
         _flame = FLAME(**config['FLAME'])
         _renderer = DifferentiableRenderer(image_size, mode='standard', num_channels=3, shading=False)
 
@@ -482,7 +482,7 @@ def demo_mlp_texture():
         tform = torch.tensor(data_dict['tform'].params).float()
 
         # Load Mesh
-        _, faces, uvs, uv_indices = load_mesh("external/clipface/head_template.obj")
+        _, faces, uvs, uv_indices = load_mesh("_external/clipface/head_template.obj")
         faces = torch.from_numpy(faces).int()
         uvs = torch.from_numpy(uvs).float()
         uvs = torch.cat([uvs[:, 0:1], 1 - uvs[:, 1:2]], dim=1)
