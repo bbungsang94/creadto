@@ -1,0 +1,35 @@
+{
+    "path": {
+        "checkpoint": "./output/checkpoint",
+        "log": "./output/log"
+    },
+    "modules": {
+        "loss": "L1Loss",
+        "optimizer": "Adam"
+    },
+    "task": {
+        "model_name": "HeadDecoder",
+        "num_workers": 0,
+        "save_interval": 300,
+        "log_interval": 300,
+        "train_ratio": 0.7,
+        "resume": false,
+        "visualize": false
+    },
+    "hyperparameters": {
+        "epochs": 1000,
+        "batch_size": 32,
+        "shuffle": false,
+        "lr": 0.0001
+    },
+    "loss":
+    {
+        "name": "L1Loss"
+    },
+    "optimizer":
+    {
+        "name": "Adam",
+        "params": null,
+        "lr": 0.0001
+    }
+}

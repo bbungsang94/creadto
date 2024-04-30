@@ -27,7 +27,7 @@ def demo():
 
 class ImageClassificationCollator:
     def __init__(self, feature_extractor):
-        
+        pass
  
     def __call__(self, batch):
         encodings = self.feature_extractor([x[0] for x in batch], return_tensors='pt')
@@ -36,7 +36,9 @@ class ImageClassificationCollator:
     
     
 if __name__ == "__main__":
-    import os
-    os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-    train()
+    from example.body_feature import run
+    run()
+    # import os
+    # os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
+    # os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+    # train()
