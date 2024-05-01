@@ -3,7 +3,7 @@ from easydict import EasyDict
 
 from creadto._external.flame.flame import FLAME, FLAMETex
 from creadto.models.gen import StyleGANAda
-from creadto.models.mlp import MappingNetwork
+from creadto.models.reg import MappingNetwork
 from creadto.utils.io import load_mesh, make_dir
 from creadto.utils.math import l2_distance
 

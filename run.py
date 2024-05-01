@@ -36,8 +36,9 @@ class ImageClassificationCollator:
     
     
 if __name__ == "__main__":
-    from example.body_feature import run
-    run()
+    from example.fit_head_measure import run
+    run(r"D:\dump\taes3.jpg")
+
     # import os
     # os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
     # os.environ["CUDA_VISIBLE_DEVICES"] = "0"

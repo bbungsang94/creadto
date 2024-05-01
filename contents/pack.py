@@ -49,7 +49,7 @@ def get_pack_gat_head_regressor(batch_size=1, shuffle=False, num_workers=0):
     # load instance
     from creadto.utils.dataset import FlameParameter
     from creadto.utils.dataloader import TensorLoader
-    from creadto.models.mlp import BasicRegressor
+    from creadto.models.reg import BasicRegressor
     dataset = FlameParameter(flame_root='./_external/flame', tailor_root='./_external/tailor', pre_check=False)
     train_dataset, eval_dataset = random_split(dataset, [0.7, 0.3])
     train_loader = TensorLoader(dataset=train_dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers)

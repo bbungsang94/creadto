@@ -4,7 +4,7 @@ import numpy as np
 import torch.nn as nn
 
 from creadto.layers.vision import SynthesisPrologue, SynthesisBlock
-from creadto.models.mlp import MappingNetwork
+from creadto.models.reg import MappingNetwork
 
 
 class HeadVAE(nn.Module):

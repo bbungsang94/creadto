@@ -49,7 +49,7 @@ class BasicDecoder(nn.Module):
 
 class HeadGATDecoder(nn.Module):
     def __init__(self, n_of_node, node_dim, edge_dim, output_dim, num_heads=5, merge='cat', model_path: str = None):
-        from creadto.layers import MultiHeadGATLayer
+        from creadto.layers.graph import MultiHeadGATLayer
         super().__init__()
         self.encoder = MultiHeadGATLayer(in_dim=node_dim, out_dim=16, edge_dim=edge_dim,
                                          num_heads=num_heads, merge=merge)
@@ -82,7 +82,7 @@ class HeadGATDecoder(nn.Module):
 
 class BodyGATDecoder(nn.Module):
     def __init__(self, n_of_node, node_dim, edge_dim, output_dim, num_heads=5, merge='cat'):
-        from creadto.layers import MultiHeadGATLayer
+        from creadto.layers.graph import MultiHeadGATLayer
         super().__init__()
         self.encoder = MultiHeadGATLayer(in_dim=node_dim, out_dim=16, edge_dim=edge_dim, num_heads=num_heads,
                                          merge=merge)
@@ -155,12 +155,14 @@ class DetailFaceModel:
         self.template = np.array([[0, 0], [0, self.crop_size - 1], [self.crop_size - 1, 0]])
 
     def __call__(self, image: torch.Tensor):
-        face_result = self.detector(image.permute(1, 2, 0))
+        image = torch.clamp(image * 255., 0, 255)
+        image = image.permute(1, 2, 0)
+        face_result = self.detector(image)
         tform = estimate_transform('similarity', face_result['points'], self.template)
         image = image / 255.
         image = warp(image, tform.inverse, output_shape=(self.crop_size, self.crop_size))
         image = image.transpose(2, 0, 1)
-
+        image = torch.tensor(image, dtype=torch.float32)[None, ...]
         with torch.no_grad():
             embedding = self.reconstructor.encode(image)
             o, v = self.reconstructor.decode(embedding)

@@ -1,9 +1,62 @@
+import math
 from typing import Any, Dict
+
+import numpy as np
 import torch
 import torch.nn as nn
+from PIL.Image import Image
 
 from creadto.layers import normalize_2nd_moment
 from creadto.layers.basic import FullyConnectedLayer
+
+
+class HumanDimEstimator:
+    def __init__(self, device="cuda:0"):
+        from body_matrix import load, measure
+        from creadto.models.det import TokenPoseLandmarker, MediaPipeLandmarker
+
+        class FakeTransform:
+            def __init__(self):
+                self.last = None
+
+            def __call__(self, x, *args, **kwargs):
+                self.last = np.array(x, *args, **kwargs)
+                return self
+
+            def to(self, *args, **kwargs):
+                return self.last
+
+        self.facial_model = MediaPipeLandmarker('./creadto-model/mp_face_landmarker.task', 0.5, 0.5)
+        self.kp_model, self.kp_transform = TokenPoseLandmarker(device), FakeTransform()
+        self.sg_model, self.sg_transform = load.segment_model(device)
+        self.device = device
+        self.collate_fn = measure.find_real_measures
+
+    def __call__(self, x: Image):
+        measurement = dict()
+        height, leg, hip, shoulder, markers, keypoints = self.collate_fn(
+            image_frame=x,
+            device=self.device,
+            keypoints_model=self.kp_model,
+            keypoints_transform=self.kp_transform,
+            segment_model=self.sg_model,
+            segment_transform=self.sg_transform
+        )
+        markers.update(keypoints)
+        head_height = self.distance(markers['top_head'], markers['chin'])
+        measurement['Stature'] = height
+        measurement['Crotch Height'] = leg
+        measurement['Hip Width'] = hip
+        measurement['Shoulder to neck(full)'] = shoulder
+        measurement['Head Height'] = 22. * head_height
+        return measurement
+
+    @staticmethod
+    def distance(a, b):
+        x_dif = (a[0] - b[0])
+        y_dif = (a[1] - b[1])
+        dif = math.sqrt(x_dif * x_dif + y_dif * y_dif)
+        return dif
 
 
 class BasicRegressor(nn.Module):
@@ -26,10 +79,12 @@ class BasicRegressor(nn.Module):
         result = {'output': o * 2,
                   'latent': o}
         return result
-    
+
+
 class MappingNetwork(nn.Module):
 
-    def __init__(self, z_dim, w_dim, num_ws=None, num_layers=8, activation='lrelu', lr_multiplier=0.01, w_avg_beta=0.995):
+    def __init__(self, z_dim, w_dim, num_ws=None, num_layers=8, activation='lrelu', lr_multiplier=0.01,
+                 w_avg_beta=0.995):
         super().__init__()
         self.z_dim = z_dim
         self.w_dim = w_dim

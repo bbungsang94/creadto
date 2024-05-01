@@ -165,6 +165,8 @@ class MediaPipeLandmarker:
         self.presence = presence
 
     def __call__(self, image):
+        # import mediapipe as mp
+        # mp.Image.
         landmark = self.detector.detect(image)
         return landmark
 
