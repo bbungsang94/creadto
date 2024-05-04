@@ -3,6 +3,14 @@ import numpy as np
 from skimage.transform import estimate_transform, warp
 
 
+class HLAMP:
+    def __init__(self):
+        pass
+
+    def __call__(self, x):
+        pass
+
+
 class DimensionHuman:
     def __init__(self, head=True):
         female_model = torch.jit.load("./creadto-model/BodyDecoder-f47-10475-v1.pt")
