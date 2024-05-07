@@ -506,7 +506,7 @@ class Crop(object):
         ]
         return '\n'.join(msg)
 
-    def __call__(self, image, target, **kwargs):
+    def __call__(self, image, **kwargs):
         sc = 1.0
         if self.is_train:
             if self.scale_dist == 'normal':
@@ -521,43 +521,15 @@ class Crop(object):
                           (self.scale_factor_max - self.scale_factor_min) +
                           self.scale_factor_min)
 
-        scale = target.get_field('scale') * sc
-        center = target.get_field('center')
-        orig_bbox_size = target.get_field('bbox_size')
-        bbox_size = orig_bbox_size * sc
+        scale = kwargs['scale'] * sc
+        center = kwargs['center']
 
-        np_image = np.asarray(image)
         cropped_image = self.crop(
-            np_image, center, scale, [self.crop_size, self.crop_size])
-        cropped_target = target.crop(
-            center, scale, crop_size=self.crop_size)
+            image, center, scale, [self.crop_size, self.crop_size])
 
         transf = self.get_transform(center, scale, [self.crop_size, self.crop_size])
 
-        if target.has_field('mask'):
-            mask = target.get_field('mask')
-            cropped_mask = self.crop(
-                mask, center, scale, [self.crop_size, self.crop_size])
-            cropped_mask = cropped_mask.reshape(
-                cropped_mask.shape[0], cropped_mask.shape[1], 1)
-            cropped_target.add_field('mask', cropped_mask)
-
-        cropped_target.add_field('crop_transform', transf)
-        cropped_target.add_field('bbox_size', bbox_size)
-
-        if target.has_field('intrinsics'):
-            intrinsics = target.get_field('intrinsics').copy()
-            fscale = cropped_image.shape[0] / orig_bbox_size
-            intrinsics[0, 0] *= (fscale / sc)
-            intrinsics[1, 1] *= (fscale / sc)
-
-            cam_center = intrinsics[:2, 2]
-            intrinsics[:2, 2] = (
-                np.dot(transf[:2, :2], cam_center) + transf[:2, 2])
-            cropped_target.add_field('intrinsics', intrinsics)
-
-        return (np_image if self.return_full_imgs else None,
-                cropped_image, cropped_target)
+        return (cropped_image, image if self.return_full_imgs else None)
 
     def crop(self, img, center, scale, res, rot=0, dtype=np.float32):
         # Upper left point

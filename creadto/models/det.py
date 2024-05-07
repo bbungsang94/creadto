@@ -75,6 +75,9 @@ class TokenPoseLandmarker:
             stub['keypoints'] = torch.stack([torch.tensor(x['keypoints'], dtype=torch.float32) for x in pose_result])
             stub['scores'] = torch.stack([torch.tensor(x['bbox'][-1], dtype=torch.float32) for x in pose_result])
             stub['boxes'] = torch.stack([torch.tensor(x['bbox'][:4], dtype=torch.float32) for x in pose_result])
+            center_x = (stub['boxes'][:, 2] + stub['boxes'][:, 0]) / 2.
+            center_y = (stub['boxes'][:, 3] + stub['boxes'][:, 1]) / 2.
+            stub['center'] = torch.cat([center_x, center_y])
             stub['info'] = info
             result.append(stub)
         return result

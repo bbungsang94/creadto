@@ -10,6 +10,103 @@ from creadto.layers import normalize_2nd_moment
 from creadto.layers.basic import FullyConnectedLayer
 
 
+class IterativeRegression(nn.Module):
+    def __init__(
+        self,
+        module,
+        mean_param = None,
+        num_stages: int = 3,
+        append_params: bool = True,
+        learn_mean: bool = False,
+        detach_mean: bool = False,
+        dim: int = 1,
+    ) -> None:
+        super(IterativeRegression, self).__init__()
+
+        self.module = module
+        self._num_stages = num_stages
+        self.dim = dim
+        self.append_params = append_params
+        self.detach_mean = detach_mean
+        self.learn_mean = learn_mean
+        if mean_param is None:
+            mean_param = torch.load('./creadto-model/body_iterative_regressor_mean.pth')
+        if learn_mean:
+            self.register_parameter(
+                'mean_param', nn.Parameter(mean_param, requires_grad=True))
+        else:
+            self.register_buffer('mean_param', mean_param)
+
+    def get_mean(self):
+        return self.mean_param.clone()
+
+    @property
+    def num_stages(self):
+        return self._num_stages
+
+    def extra_repr(self):
+        msg = [
+            f'Num stages = {self.num_stages}',
+            f'Concatenation dimension: {self.dim}',
+            f'Detach mean: {self.detach_mean}',
+            f'Learn mean: {self.learn_mean}',
+        ]
+        return '\n'.join(msg)
+
+    def forward(self, features, cond = None):
+        ''' Computes deltas on top of condition iteratively
+
+            Parameters
+            ----------
+                features: torch.Tensor
+                    Input features computed by a NN backbone
+                cond: Condition vector used as the initial point of the
+                    iterative regression method.
+
+            Returns
+            -------
+                parameters: List[torch.Tensor]
+                    A list of tensors, where each element corresponds to a
+                    different stage
+                deltas: List[torch.Tensor]
+                    A list of tensors, where each element corresponds to a
+                    the estimated offset at each stage
+        '''
+        batch_size = features.shape[0]
+        expand_shape = [batch_size] + [-1] * len(features.shape[1:])
+
+        parameters = []
+        deltas = []
+        module_input = features
+
+        if cond is None:
+            cond = self.mean_param.expand(*expand_shape).clone()
+
+        # Detach mean
+        if self.detach_mean:
+            cond = cond.detach()
+
+        if self.append_params:
+            assert features is not None, (
+                'Features are none even though append_params is True')
+
+            module_input = torch.cat([
+                module_input,
+                cond],
+                dim=self.dim)
+        deltas.append(self.module(module_input))
+        num_params = deltas[-1].shape[1]
+        parameters.append(cond[:, :num_params].clone() + deltas[-1])
+
+        for stage_idx in range(1, self.num_stages):
+            module_input = torch.cat(
+                [features, parameters[stage_idx - 1]], dim=-1)
+            params_upd = self.module(module_input)
+            parameters.append(parameters[stage_idx - 1] + params_upd)
+
+        return parameters, deltas
+    
+    
 class HumanDimEstimator:
     def __init__(self, device="cuda:0"):
         from body_matrix import load, measure
