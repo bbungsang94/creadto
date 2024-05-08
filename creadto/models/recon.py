@@ -105,10 +105,14 @@ class BLASS:
     
     def __call__(self, x):
         result = dict()
+        batch_size = x.shape[0]
         result['joint_info'] = self.joint_estimator(x)
         result['body_images'] = self._encode(x, result['joint_info'])
         result['shape_parameters'] = self._to_param(result['body_images'])
         result['vertex'], result['3d_joint'] = self.body_decoder(**result['shape_parameters'])
+        result['plane_vertex'], _ = self.body_decoder(beta=result['shape_parameters']['beta'],
+                                                      pose=torch.zeros(batch_size, 55, 3, dtype=torch.float32),
+                                                      offset=torch.zeros(batch_size, 3, dtype=torch.float32))
         result['face'] = self.body_decoder.faces
         return result
 
@@ -148,24 +152,35 @@ class DetailFaceModel:
         from creadto.models.det import FaceAlignmentLandmarker
 
         self.detector = FaceAlignmentLandmarker()
-        self.reconstructor = DECA(config=deca_cfg)
+        self.reconstructor = DECA(config=deca_cfg, device="cuda:0")
         self.crop_size = 224
         self.template = np.array([[0, 0], [0, self.crop_size - 1], [self.crop_size - 1, 0]])
 
-    def __call__(self, image: torch.Tensor):
-        image = torch.clamp(image * 255., 0, 255)
-        image = image.permute(1, 2, 0)
-        face_result = self.detector(image)
-        tform = estimate_transform('similarity', face_result['points'], self.template)
-        image = image / 255.
-        image = warp(image, tform.inverse, output_shape=(self.crop_size, self.crop_size))
-        image = image.transpose(2, 0, 1)
-        image = torch.tensor(image, dtype=torch.float32)[None, ...]
+    def encode(self, images: torch.Tensor):
+        crop_images = []
+        for image in images:
+            image = torch.clamp(image * 255., 0, 255)
+            image = image.permute(1, 2, 0)
+            face_result = self.detector(image)
+            tform = estimate_transform('similarity', face_result['points'], self.template)
+            image = image / 255.
+            image = warp(image, tform.inverse, output_shape=(self.crop_size, self.crop_size))
+            image = image.transpose(2, 0, 1)
+            crop_images.append(torch.tensor(image, dtype=torch.float32))
+        return torch.stack(crop_images, dim=0)
+    
+    def decode(self, images: torch.Tensor):
         with torch.no_grad():
-            embedding = self.reconstructor.encode(image)
+            embedding = self.reconstructor.encode(images.to(torch.device("cuda:0")))
             o, v = self.reconstructor.decode(embedding)
             output = o
             output['latent'] = embedding
             output['visualize'] = v
 
+        # to cpu
+        output['crop_image'] = images
         return output
+    
+    def __call__(self, image: torch.Tensor):
+        return self.decode(self.encode(image))
+

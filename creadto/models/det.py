@@ -92,7 +92,7 @@ class GenderClassification:
 
     def __call__(self, x):
         o = self.model(x)
-        output = [self.label[torch.argmax(i)] for i in o]
+        output = [self.label[torch.argmax(i)] for i in o.logits]
         return output
 
 

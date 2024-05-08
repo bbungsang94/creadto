@@ -1,9 +1,59 @@
 import copy
+import os
+import pickle
 
 import numpy as np
 import open3d as o3d
 import torch
 from torch_geometric.data import Data, Batch
+
+
+class ModelConcatenator:
+    def __init__(self, root):
+        with open(file=os.path.join(root, "MANO_SMPLX_vertex_ids.pkl"), mode='rb') as f:
+            self.ids = pickle.load(f)
+        self.ids.update({'head': np.load(os.path.join(root, "SMPL-X__FLAME_vertex_ids.npy"))})
+
+        self.human = {
+            'model': {
+                'body': None,
+                'head': None,
+                'face': None
+            },
+            'rig': {
+
+            }
+        }
+
+    def update_model(self, **kwargs):
+        vertex = self.human['model']
+        for k, v in kwargs.items():
+            if k in vertex:
+                vertex[k] = v
+
+        if vertex['body'] is not None:
+            # fitting models into body
+            body = vertex['body']
+            if vertex['head'] is not None:
+                head = vertex['head'].cpu()
+                head_max, _ = head.max(dim=1)
+                head_min, _ = head.min(dim=1)
+                head_inplace = body[:, self.ids['head'], :]
+                inplace_max, _ = head_inplace.max(dim=1)
+                inplace_min, _ = head_inplace.min(dim=1)
+                ratio = (inplace_max - inplace_min) / (head_max - head_min)
+                pivot = inplace_min - head_min
+                head = head * ratio.unsqueeze(dim=1)
+                head = head + pivot.unsqueeze(dim=1)
+                body[:, self.ids['head'], :] = head
+                self.human['model']['body'] = body
+                self.human['model']['head'] = head
+        if 'visualize' in kwargs and kwargs['visualize']:
+            import open3d as o3d
+            mesh = o3d.geometry.PointCloud()
+            mesh.points = o3d.utility.Vector3dVector(self.human['model']['body'][0].detach().numpy())
+            o3d.visualization.draw_geometries([mesh])
+        return self.human
 
 
 class Tailor:
