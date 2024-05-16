@@ -82,11 +82,23 @@ def head_to_measure(vertices):
 
 
 def procedure():
+    import open3d as o3d
     from creadto.models.legacy import ModelConcatenator
     concatenator = ModelConcatenator(root="./creadto-model")
     face_model = image_to_flaep(root=r"D:\dump")
     gender = image_to_gender(images=face_model['crop_image'])
     body_model = image_to_blass(root=r"D:\dump")
+
+    for i, v in enumerate(body_model['vertex']):
+        mesh = o3d.geometry.TriangleMesh()
+        mesh.vertices = o3d.utility.Vector3dVector(v.cpu().detach().numpy())
+        mesh.triangles = o3d.utility.Vector3iVector(body_model['face'])
+        o3d.io.write_triangle_mesh(os.path.join("D:\dump\model", "%05d.obj" % i), mesh)
     body_measurement = body_to_measure(body_model['plane_vertex'], gender)
     face_measurement = head_to_measure(face_model['trans_verts'])
     humans = concatenator.update_model(body=body_model['plane_vertex'], head=face_model['plane_verts'], visualize=True)
+    for i, v in enumerate(humans['model']['body']):
+        mesh = o3d.geometry.TriangleMesh()
+        mesh.vertices = o3d.utility.Vector3dVector(v.cpu().detach().numpy())
+        mesh.triangles = o3d.utility.Vector3iVector(body_model['face'])
+        o3d.io.write_triangle_mesh(os.path.join("D:\dump\plane", "%05d.obj" % i), mesh)

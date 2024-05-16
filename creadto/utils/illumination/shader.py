@@ -3,7 +3,7 @@
 import torch.nn as nn
 
 from creadto.utils.illumination.lighting import PointLight
-from creadto.utils.illumination.utils import Materials
+from creadto.utils.illumination.materials import Materials
 from creadto.utils.illumination.shading import apply_lighting
 
 

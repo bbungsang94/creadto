@@ -72,8 +72,6 @@ class BLASS:
             cropped, _ = self.transformer['crop'](stub, scale=2.3, center=center)
             normalized = self.transformer['normalize'](cv2.cvtColor(cropped, cv2.COLOR_BGR2RGB) / 255.)
             images.append(normalized)
-        import torchvision
-        torchvision.utils.save_image(images[0], 'test_image.jpg')
         return torch.stack(images, dim=0)
     
     def _to_param(self, x):
@@ -103,6 +101,33 @@ class BLASS:
             parameters['offset'] = torch.zeros((batch_size, 3), dtype=torch.float32)
         return parameters
     
+    def set_render_parameters(self, joint_info, cam_trans, cam_scale):
+        h, w = 450, 300
+        parameters = {'shift_x': [], 'shift_y': [],
+                      'transl': [],
+                      'focal_length_in_mm': [], 'focal_length_in_px': [],
+                      'center': [], 'sensor_width': [],}
+        for i, info in enumerate(joint_info):
+            bbox, center = info['boxes'][0], info['center'][0:2]
+            box_size = max(bbox[2:4])
+            z = 2 * 5000 / (cam_scale[i] * box_size)
+
+            transl = [cam_trans[i, 0].item(), cam_trans[i, 1].item(), z.item()]
+            shift_x = - (center[0] / w - 0.5)
+            shift_y = (center[1] - 0.5 * h) / w
+            focal_length_in_mm = 5000 / w * 23
+            parameters['shift_x'].append(shift_x)
+            parameters['shift_y'].append(shift_y)
+            parameters['transl'].append(transl)
+            parameters['focal_length_in_mm'].append(focal_length_in_mm)
+            parameters['focal_length_in_px'].append(5000)
+            parameters['center'].append(center)
+            parameters['sensor_width'].append(23)
+
+        for key in parameters:
+            parameters[key] = np.array(parameters[key])
+        return parameters
+        
     def __call__(self, x):
         result = dict()
         batch_size = x.shape[0]
@@ -114,6 +139,12 @@ class BLASS:
                                                       pose=torch.zeros(batch_size, 55, 3, dtype=torch.float32),
                                                       offset=torch.zeros(batch_size, 3, dtype=torch.float32))
         result['face'] = self.body_decoder.faces
+        result['scale'] = result['shape_parameters']['camera'][:, 0].view(-1, 1)
+        result['translation'] = result['shape_parameters']['camera'][:, 1:3]
+        result['overlay_image'] = np.transpose(np.array(x), [0, 3, 1, 2])
+        result['cam_param'] = self.set_render_parameters(result['joint_info'],
+                                                         result['translation'],
+                                                         result['scale'])
         return result
 
 
@@ -158,16 +189,21 @@ class DetailFaceModel:
 
     def encode(self, images: torch.Tensor):
         crop_images = []
+        process = []
         for image in images:
             image = torch.clamp(image * 255., 0, 255)
             image = image.permute(1, 2, 0)
             face_result = self.detector(image)
+            if face_result['bbox'] is None:
+                process.append(False)
+                continue
             tform = estimate_transform('similarity', face_result['points'], self.template)
             image = image / 255.
             image = warp(image, tform.inverse, output_shape=(self.crop_size, self.crop_size))
             image = image.transpose(2, 0, 1)
             crop_images.append(torch.tensor(image, dtype=torch.float32))
-        return torch.stack(crop_images, dim=0)
+            process.append(True)
+        return torch.stack(crop_images, dim=0), process
     
     def decode(self, images: torch.Tensor):
         with torch.no_grad():
@@ -182,5 +218,8 @@ class DetailFaceModel:
         return output
     
     def __call__(self, image: torch.Tensor):
-        return self.decode(self.encode(image))
+        crop_images, process = self.encode(image)
+        result = self.decode(crop_images)
+        result['process'] = process
+        return result
 
