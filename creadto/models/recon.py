@@ -124,8 +124,6 @@ class BLASS:
             parameters['center'].append(center)
             parameters['sensor_width'].append(23)
 
-        for key in parameters:
-            parameters[key] = np.array(parameters[key])
         return parameters
         
     def __call__(self, x):

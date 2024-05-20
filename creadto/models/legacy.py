@@ -41,7 +41,7 @@ class ModelConcatenator:
                 head_inplace = body[:, self.ids['head'], :]
                 inplace_max, _ = head_inplace.max(dim=1)
                 inplace_min, _ = head_inplace.min(dim=1)
-                ratio = (inplace_max - inplace_min) / (head_max - head_min)
+                ratio = (head_max - head_min) / (inplace_max - inplace_min)
                 pivot = inplace_min - head_min
                 head = head * ratio.unsqueeze(dim=1)
                 head = head + pivot.unsqueeze(dim=1)
@@ -239,7 +239,7 @@ class Tailor:
             self.table[male_indexes, only_female_idx[0]] = 0.
             self.table[male_indexes, only_female_idx[1]] = 0.
         if visualize:
-            vis_idx = 520
+            vis_idx = 0
             print(vis_idx)
             for pose, vertex in self.model.items():
                 points = []
@@ -300,6 +300,29 @@ class Tailor:
                     lines.clear()
                     line_colors.clear()
 
+        if self.table.shape[1] >= 46:
+            self.table[:, 39] = self.table[:, 39] - 0.0791707
+            self.table[:, 32] = self.table[:, 32] - 0.063667944
+            self.table[:, 28] = self.table[:, 28] - 0.058014839
+            self.table[:, 3] = self.table[:, 3] - 0.055395142
+            self.table[:, 6] = self.table[:, 6] - 0.048676284
+            self.table[:, 20] = self.table[:, 20] - 0.038910605
+            self.table[:, 36] = self.table[:, 36] + 0.04487607
+            self.table[:, 46] = self.table[:, 46] + 0.031787722
+            self.table[:, 44] = self.table[:, 44] - 0.035034574
+            self.table[:, 42] = self.table[:, 42] + 0.015055184
+            self.table[:, 41] = self.table[:,41] - 0.028909176
+            self.table[:, 40] = self.table[:, 40] - 0.016079659
+            self.table[:, 25] = self.table[:, 25] + 0.011062523
+            self.table[:, 22] = self.table[:, 22] + 0.023733191
+            self.table[:, 16] = self.table[:, 16] - 0.02816479
+            self.table[:, 15] = self.table[:, 15] + 0.006243895
+            self.table[:, 4] = self.table[:, 4] - 0.032512034
+            self.table[:, 11] = self.table[:, 11] + 0.011548213
+            self.table[:, 13] = self.table[:, 13] - 0.01753491
+            self.table[:, 7] = self.table[:, 7] - 0.020710816
+            self.table[:, 27] = self.table[:, 27] - 0.014126228
+            self.table[:, 30] = self.table[:, 30] - 0.026458427
         return self.table
 
     def _convert_tag(self, pin):
