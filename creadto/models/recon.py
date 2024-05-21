@@ -39,7 +39,7 @@ class BLASS:
             'smpl_indices':{
                 'pose': (0, 132),
                 'beta': (132, 142),
-                'camera': (142, 146)
+                'offset': (142, 146)
             }
         }
         weight_pack = torch.load('./creadto-model/BLASS-v1-enc-reg-dec-pack')['model']
@@ -97,12 +97,13 @@ class BLASS:
                         parameters[key][i] = pose_mat
                     bumper = torch.eye(3, dtype=torch.float32).view(1, 1, 3, 3).expand(batch_size, 33, -1, -1).contiguous()
                     parameters[key] = torch.cat([parameters[key], bumper], dim=1)
-                            
-            parameters['offset'] = torch.zeros((batch_size, 3), dtype=torch.float32)
+                    parameters['pose'][:, 0, :] = torch.eye(3, dtype=torch.float32)
+                    
+            parameters['offset'] = torch.zeros((batch_size, 3), dtype=torch.float32)          
         return parameters
     
     def set_render_parameters(self, joint_info, cam_trans, cam_scale):
-        h, w = 450, 300
+        h, w = 450, 450
         parameters = {'shift_x': [], 'shift_y': [],
                       'transl': [],
                       'focal_length_in_mm': [], 'focal_length_in_px': [],
@@ -110,7 +111,7 @@ class BLASS:
         for i, info in enumerate(joint_info):
             bbox, center = info['boxes'][0], info['center'][0:2]
             box_size = max(bbox[2:4])
-            z = 2 * 5000 / (cam_scale[i] * box_size)
+            z = 2 * 500 / (cam_scale[i] * box_size)
 
             transl = [cam_trans[i, 0].item(), cam_trans[i, 1].item(), z.item()]
             shift_x = - (center[0] / w - 0.5)
@@ -137,8 +138,8 @@ class BLASS:
                                                       pose=torch.zeros(batch_size, 55, 3, dtype=torch.float32),
                                                       offset=torch.zeros(batch_size, 3, dtype=torch.float32))
         result['face'] = self.body_decoder.faces
-        result['scale'] = result['shape_parameters']['camera'][:, 0].view(-1, 1)
-        result['translation'] = result['shape_parameters']['camera'][:, 1:3]
+        result['scale'] = result['shape_parameters']['offset'][:, 0].view(-1, 1)
+        result['translation'] = result['shape_parameters']['offset'][:, 1:3]
         result['overlay_image'] = np.transpose(np.array(x), [0, 3, 1, 2])
         result['cam_param'] = self.set_render_parameters(result['joint_info'],
                                                          result['translation'],
