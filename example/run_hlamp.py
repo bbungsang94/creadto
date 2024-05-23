@@ -33,8 +33,10 @@ def image_to_flaep(root):
     from creadto.models.recon import DetailFaceModel
     trans = torchvision.transforms.ToTensor()
     flaep = DetailFaceModel()
-    files = os.listdir(os.path.join(root, "raw"))
-    files = [os.path.join(root, "raw", x) for x in files]
+    # files = os.listdir(os.path.join(root, "raw"))
+    files = os.listdir(root)
+    files = [os.path.join(root, x) for x in files]
+    #files = [os.path.join(root, "raw", x) for x in files]
     raw_images = []
     h = 450
     w = 300
@@ -44,7 +46,7 @@ def image_to_flaep(root):
         image = cv2.resize(image, dsize=(w, h), interpolation=cv2.INTER_LINEAR)
         raw_images.append(trans(image))
     raw_images = torch.stack(raw_images, dim=0)
-    return flaep(raw_images)
+    return flaep(raw_images), flaep.reconstructor
 
 
 def body_to_measure(vertices, gender):

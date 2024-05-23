@@ -4,13 +4,14 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 import open3d as o3d
+from tqdm import tqdm
 from torchvision.transforms import transforms, ToPILImage
 
-from creadto._external.deca.decalib import DECA
-from creadto._external.deca.decalib import FLAME, FLAMETex
+from creadto._external.deca.decalib.deca import DECA
+from creadto._external.deca.decalib.deca import FLAME, FLAMETex
 from creadto._external.deca.decalib.utils import util
-from creadto._external.deca.decalib import cfg as deca_cfg
-from creadto._external.deca.decalib import SRenderY, set_rasterizer
+from creadto._external.deca.decalib.deca import cfg as deca_cfg
+from creadto._external.deca.decalib.utils.renderer import SRenderY, set_rasterizer
 
 from PIL import Image
 import cv2
@@ -60,12 +61,13 @@ def mask2uv():
     cv2.imwrite('total_face.jpg', backboard)
 
 
-def make_mask_image(image_size=256):
+def make_mask_image(image_size=512):
+    from creadto.utils.math import is_in_polygon
     device = torch.device("cuda")
-    flame_root = r"D:\Creadto\creadto\external\flame"
+    flame_root = r"./creadto-model"
     mask_file = "FLAME_masks.pkl"
 
-    flame_mask = np.load(os.path.join(flame_root, mask_file), allow_pickle=True, encoding="latin1")
+    flame_mask = np.load("./creadto-model/flame/flame_masks.pkl", allow_pickle=True, encoding="latin1")
     flame = FLAME(deca_cfg.model).to(device)
     flametex = FLAMETex(deca_cfg.model).to(device)
     shape, exp, pose = torch.zeros(1, deca_cfg.model.n_shape), torch.zeros(1, deca_cfg.model.n_exp), torch.zeros(1,
@@ -89,16 +91,21 @@ def make_mask_image(image_size=256):
             mapper_set = mapper_set.union(set(indexes))
 
         backboard = np.zeros((image_size, image_size, 3))
-        for index in mapper_set:
-            a = uvcoords[uvfaces[index][0]]
-            b = uvcoords[uvfaces[index][1]]
-            c = uvcoords[uvfaces[index][2]]
-            au, av = a[0] * image_size, image_size - (a[1] * image_size)
-            bu, bv = b[0] * image_size, image_size - (b[1] * image_size)
-            cu, cv = c[0] * image_size, image_size - (c[1] * image_size)
-            backboard = cv2.line(backboard, (int(au), int(av)), (int(bu), int(bv)), (255, 255, 255), 1)
-            backboard = cv2.line(backboard, (int(bu), int(bv)), (int(cu), int(cv)), (255, 255, 255), 1)
-            backboard = cv2.line(backboard, (int(cu), int(cv)), (int(au), int(av)), (255, 255, 255), 1)
+        for index in tqdm(mapper_set):
+            triangle_vertices = torch.tensor([
+                uvcoords[uvfaces[index][0]],
+                uvcoords[uvfaces[index][1]],
+                uvcoords[uvfaces[index][2]]
+                ])
+            triangle_vertices = triangle_vertices * image_size
+            max_bound, _ = triangle_vertices.max(dim=0)
+            max_bound[0], max_bound[1] = int(max_bound[0]), int(max_bound[1])
+            min_bound, _ = triangle_vertices.min(dim=0)
+            min_bound[0], min_bound[1] = int(min_bound[0]), int(min_bound[1])
+            for px in range(int(min_bound[0].item()), int(max_bound[0].item()) + 1):
+                for py in range(int(min_bound[1].item()), int(max_bound[1].item()) + 1):
+                    if is_in_polygon(triangle_vertices, [px, py]):
+                        backboard[image_size - py, px] = 255
 
         cv2.imwrite(key + '.jpg', backboard)
 
@@ -238,4 +245,4 @@ def note():
 
 
 if __name__ == "__main__":
-    full_texture_multiview()
+    make_mask_image()
