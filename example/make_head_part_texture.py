@@ -229,8 +229,64 @@ def match_skin(face_path=r"./output/deca_output.png",
     cv2.imwrite("final_blur.png", blurred_image)
     mask_3ch = cv2.cvtColor(contour_mask, cv2.COLOR_GRAY2RGB)
     final_image = np.where(mask_3ch == 255, blurred_image, merged_image)
-    cv2.imwrite("final_output.png", cv2.resize(final_image, (256, 256)))
+    final_image = cv2.resize(final_image, (256, 256))
+    cv2.imwrite("final_output.png", final_image)
+    return cv2.cvtColor(final_image, cv2.COLOR_BGR2RGB)
 
+def run_full_cycle(root):
+    import torch
+    from PIL import Image
+    from torchvision.transforms import ToTensor, ToPILImage
+    from creadto.models.recon import DetailFaceModel
+    flaep = DetailFaceModel()
+    trans = ToTensor()
+    to_pil = ToPILImage()
+
+    files = os.listdir(root)
+    files = [os.path.join(root, x) for x in files]
+
+    raw_images = []
+    for file in files:
+        image = Image.open(file)
+        raw_images.append(trans(image))
+
+    result = flaep(raw_images)
+    image_texture = result["uv_texture_gt"]
+    for i, face_image in enumerate(image_texture):
+        pil_image: Image = to_pil(face_image)
+        pil_image.save("face_image.png")
+        image_texture[i] = trans(match_skin(face_path=r"./face_image.png"))
+    result["uv_texture_gt"] = image_texture
+    flaep.reconstructor.save_obj(osp.join(r"D:\dump\head_model_test\output_models", "head.obj"), result)
+
+def run_cut_only_head_image(root=r"D:\dump\head_model_test\input_images\imgs"):
+    import torch
+    from PIL import Image
+    from torchvision.transforms import ToTensor, ToPILImage
+    from creadto.models.recon import DetailFaceModel
+    flaep = DetailFaceModel()
+    trans = ToTensor()
+    to_pil = ToPILImage()
+
+    files = os.listdir(root)
+
+    raw_images = []
+    for file in files:
+        image = Image.open(osp.join(root, file))
+        raw_images.append(trans(image))
+    result, process = flaep.encode(raw_images)
+    for i, face_image in enumerate(result):
+        pil_image: Image = to_pil(face_image)
+        pil_image.save(osp.join(root, "head-%s" % files[i]))
+
+def resize_to(root=r"D:\dump\head_model_test\input_images\imgs", target=(512, 512)):
+    files = os.listdir(root)
+    files = [x for x in files if ".jpeg" in x or ".jpg" in x or ".png" in x]
+    for file in files:
+        image = cv2.imread(osp.join(root, file))
+        image = cv2.resize(image, target)
+        cv2.imwrite(osp.join(root, "%d-%s" %(target[0], file)), image)
+        
 if __name__ == "__main__":
     # make_contour_mask()
     # make_images(mask_root=r"D:\Creadto\CreadtoLibrary\creadto-model\flame\mask_images", origin_root=r"D:\Creadto\CreadtoLibrary\creadto-model\flame\default_texture")
@@ -238,4 +294,6 @@ if __name__ == "__main__":
     # merge_face_default(face_path=r"D:\dump\temp\result_head-0th.png", mask_root=r"D:\Creadto\CreadtoLibrary\creadto-model\flame\mask_images")
     # map_body_texture(face_texture_path=r"./merged_image.png", mask_path=r"D:\Creadto\CreadtoLibrary\creadto-model\flame\mask_images\inference_mask.jpg")
     # modify_skin_color()
-    match_skin()
+    # run_full_cycle(root=r"D:/dump/head_model_test/input_images")
+    #run_cut_only_head_image()
+    resize_to()
