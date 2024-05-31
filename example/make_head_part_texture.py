@@ -143,8 +143,9 @@ def match_skin(face_path=r"./output/deca_output.png",
                skin_mask_path=r"./creadto-model/flame/mask_images/skin.jpg",
                observed_mask_path=r"./creadto-model/flame/mask_images/observed_mask.jpg",
                contour_path=r"./creadto-model/flame/mask_images/face_contour.jpg",
-               mst_root=r"creadto-model/textures/MonkSkinToneScale/MST Swatches",
-               prefix=""):
+               mst_root=r"creadto-model/textures/MSTScale/MST Swatches",
+               prefix="",
+               save_log=True):
     #Load MST
     monk_skin_tone_scale = []
     skin_files = os.listdir(mst_root)
@@ -155,19 +156,22 @@ def match_skin(face_path=r"./output/deca_output.png",
     
     deca_image = cv2.imread(face_path)
     deca_image = cv2.resize(deca_image, (512, 512))
-    cv2.imwrite(prefix + "input_image.png", deca_image) 
+    if save_log:
+        cv2.imwrite(prefix + "input_image.png", deca_image) 
     default_image = cv2.imread(default_path)
     
     skin_mask = cv2.imread(skin_mask_path, cv2.IMREAD_GRAYSCALE)
     deca_skin_mask = cv2.resize(skin_mask, (deca_image.shape[0], deca_image.shape[1]))
     _, deca_skin_mask = cv2.threshold(deca_skin_mask, 128, 255, cv2.THRESH_BINARY)
     deca_skin_image = cv2.bitwise_and(deca_image, deca_image, mask=deca_skin_mask)
-    cv2.imwrite(prefix + "pre_skin_data.png", deca_skin_image)    
+    if save_log:
+        cv2.imwrite(prefix + "pre_skin_data.png", deca_skin_image)    
     
     default_skin_mask = cv2.resize(skin_mask, (default_image.shape[0], default_image.shape[1]))
     _, default_skin_mask = cv2.threshold(default_skin_mask, 128, 255, cv2.THRESH_BINARY)
     default_skin_image = cv2.bitwise_and(default_image, default_image, mask=default_skin_mask)
-    cv2.imwrite(prefix + "pre_default.png", default_skin_image) 
+    if save_log:
+        cv2.imwrite(prefix + "pre_default.png", default_skin_image) 
     
     # Get skin data
     image_skin = np.zeros(3)
@@ -181,8 +185,9 @@ def match_skin(face_path=r"./output/deca_output.png",
         
         default_panel = default_skin_image[:, :, i]
         default_subset &= (default_panel >= min_value) & (default_panel <= max_value)
-    cv2.imwrite(prefix + "input_skin_detected.png", deca_subset.astype(np.float32) * 255)
-    cv2.imwrite(prefix + "default_skin_detected.png", default_subset.astype(np.float32) * 255)
+    if save_log:
+        cv2.imwrite(prefix + "input_skin_detected.png", deca_subset.astype(np.float32) * 255)
+        cv2.imwrite(prefix + "default_skin_detected.png", default_subset.astype(np.float32) * 255)
     
     for i in range(3):
         deca_panel = deca_skin_image[:, :, i] * deca_subset
@@ -206,14 +211,16 @@ def match_skin(face_path=r"./output/deca_output.png",
         default_panel = default_image[:, :, i]
         deca_subset &= (deca_panel >= min_value) & (deca_panel <= max_value)
         default_subset &= (default_panel >= min_value) & (default_panel <= max_value)
-    cv2.imwrite(prefix + "input_skin_applied.png", deca_subset.astype(np.float32) * 255)
-    cv2.imwrite(prefix + "default_skin_applied.png", default_subset.astype(np.float32) * 255)
+    if save_log:
+        cv2.imwrite(prefix + "input_skin_applied.png", deca_subset.astype(np.float32) * 255)
+        cv2.imwrite(prefix + "default_skin_applied.png", default_subset.astype(np.float32) * 255)
     for i in range(3):
         deca_image[:, :, i] = np.clip(deca_subset * deca_diff[i] + deca_image[:, :, i], 0, 255)
         default_image[:, :, i] = np.clip(default_subset * default_diff[i] + default_image[:, :, i], 0, 255)
 
-    cv2.imwrite(prefix + "post_skin_data.png", deca_image) 
-    cv2.imwrite(prefix + "post_default.png", default_image) 
+    if save_log:
+        cv2.imwrite(prefix + "post_skin_data.png", deca_image) 
+        cv2.imwrite(prefix + "post_default.png", default_image) 
     
     # Merge image
     observed_mask = cv2.imread(observed_mask_path, cv2.IMREAD_GRAYSCALE)
@@ -222,23 +229,26 @@ def match_skin(face_path=r"./output/deca_output.png",
     default_image = cv2.resize(default_image, (observed_mask.shape[0], observed_mask.shape[1]))
     default_image = cv2.bitwise_and(default_image, default_image, mask=255-observed_mask)
     merged_image = cv2.add(default_image, face_image)
-    cv2.imwrite(prefix + "cut_default.png", default_image)
-    cv2.imwrite(prefix + "cut_face.png", face_image)
-    cv2.imwrite(prefix + "merged_image.png", cv2.resize(merged_image, (256, 256)))
+    if save_log:
+        cv2.imwrite(prefix + "cut_default.png", default_image)
+        cv2.imwrite(prefix + "cut_face.png", face_image)
+        cv2.imwrite(prefix + "merged_image.png", cv2.resize(merged_image, (256, 256)))
     
     # Blur contour
     contour_mask = cv2.imread(contour_path, cv2.IMREAD_GRAYSCALE)
     _, observed_mask = cv2.threshold(observed_mask, 128, 255, cv2.THRESH_BINARY)
     blurred_image = cv2.GaussianBlur(merged_image, (21, 21), 9, 9)
     blurred_image = cv2.blur(merged_image, (25, 25))
-    cv2.imwrite(prefix + "final_blur.png", blurred_image)
+    if save_log:
+        cv2.imwrite(prefix + "final_blur.png", blurred_image)
     mask_3ch = cv2.cvtColor(contour_mask, cv2.COLOR_GRAY2RGB)
     final_image = np.where(mask_3ch == 255, blurred_image, merged_image)
     final_image = cv2.resize(final_image, (256, 256))
-    cv2.imwrite(prefix + "final_output.png", final_image)
+    if save_log:
+        cv2.imwrite(prefix + "final_output.png", final_image)
     return cv2.cvtColor(final_image, cv2.COLOR_BGR2RGB)
 
-def run_full_cycle(root):
+def  run_full_cycle(root):
     import torch
     from PIL import Image
     from torchvision.transforms import ToTensor, ToPILImage
@@ -259,17 +269,23 @@ def run_full_cycle(root):
         image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
         raw_images.append(trans(image_rgb))
     raw_images = torch.stack(raw_images, dim=0)
+    
     result = flaep.decode(raw_images.cuda())
-
     image_texture = result["uv_texture_gt"]
     for i, face_image in enumerate(image_texture):
         pil_image: Image = to_pil(face_image)
         pil_image.save("face_image.png")
-        image_texture[i] = trans(match_skin(face_path=r"./face_image.png", prefix="%d-" % i))
-    result["uv_texture_gt"] = image_texture
+        image_texture[i] = trans(match_skin(face_path=r"./face_image.png", prefix="%d-" % i, save_log=False))
+        
+    result = flaep.decode(raw_images.cuda(), external_tex=image_texture)
+    image_texture = result["uv_texture_gt"]
+    for i, face_image in enumerate(image_texture):
+        pil_image: Image = to_pil(face_image)
+        pil_image.save("face_image.png")
+        image_texture[i] = trans(match_skin(face_path=r"./face_image.png", prefix="%d-" % i, save_log=True))
     flaep.reconstructor.save_obj(osp.join(r"D:\dump\head_model_test\output_models", "head.obj"), result)
 
-def run_cut_only_head_image(root=r"D:\dump\head_model_test\input_images\imgs"):
+def run_cut_only_head_image(root=r"D:\dump\head_model_test\input_images"):
     import torch
     from PIL import Image
     from torchvision.transforms import ToTensor, ToPILImage
@@ -305,4 +321,4 @@ if __name__ == "__main__":
     # map_body_texture(face_texture_path=r"./merged_image.png", mask_path=r"D:\Creadto\CreadtoLibrary\creadto-model\flame\mask_images\inference_mask.jpg")
     # modify_skin_color()
     run_full_cycle(root=r"D:/dump/head_model_test")
-    #run_cut_only_head_image()
+    # run_cut_only_head_image()

@@ -1,3 +1,5 @@
+from typing import List
+from PIL.Image import Image
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -176,15 +178,16 @@ class DimensionHuman:
 
 
 class DetailFaceModel:
-    def __init__(self):
+    def __init__(self, device="cuda:0"):
         from creadto._external.deca.decalib.deca import DECA
         from creadto._external.deca.decalib.deca import cfg as deca_cfg
         from creadto.models.det import FaceAlignmentLandmarker
 
         self.detector = FaceAlignmentLandmarker()
-        self.reconstructor = DECA(config=deca_cfg, device="cuda:0")
+        self.reconstructor = DECA(config=deca_cfg, device=device)
         self.crop_size = 224
         self.template = np.array([[0, 0], [0, self.crop_size - 1], [self.crop_size - 1, 0]])
+        self.device = torch.device(device)
 
     def encode(self, images: torch.Tensor):
         crop_images = []
@@ -204,10 +207,26 @@ class DetailFaceModel:
             process.append(True)
         return torch.stack(crop_images, dim=0), process
     
-    def decode(self, images: torch.Tensor):
+    def encode_pil(self, images: List[Image]):
+        crop_images = []
+        process = []
+        for image in images:
+            face_result = self.detector(image)
+            if face_result['bbox'] is None:
+                process.append(False)
+                continue
+            tform = estimate_transform('similarity', face_result['points'], self.template)
+            image = image / 255.
+            image = warp(image, tform.inverse, output_shape=(self.crop_size, self.crop_size))
+            image = image.transpose(2, 0, 1)
+            crop_images.append(torch.tensor(image, dtype=torch.float32))
+            process.append(True)
+        return torch.stack(crop_images, dim=0).to(self.device), process
+    
+    def decode(self, images: torch.Tensor, external_tex=None):
         with torch.no_grad():
             embedding = self.reconstructor.encode(images.to(torch.device("cuda:0")))
-            o, v = self.reconstructor.decode(embedding)
+            o, v = self.reconstructor.decode(embedding, external_tex=external_tex)
             output = o
             output['latent'] = embedding
             output['visualize'] = v
