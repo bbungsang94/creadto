@@ -211,6 +211,7 @@ class DetailFaceModel:
         crop_images = []
         process = []
         for image in images:
+            image = np.asarray(image)
             face_result = self.detector(image)
             if face_result['bbox'] is None:
                 process.append(False)
