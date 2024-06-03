@@ -7,18 +7,95 @@ import torch
 import numpy as np
 from torchvision.transforms import transforms
 
+
+class TokenPoseLandmarker:
+    def __init__(self, device="cuda:0"):
+        from easydict import EasyDict
+        from mmpose.apis import process_mmdet_results, inference_top_down_pose_model
+        from mmdet.apis import inference_detector, init_detector
+        from creadto._external.PCT.demo_img_with_mmdet import init_pose_model, vis_pose_result
+        from mmpose.datasets import DatasetInfo
+
+        args = {
+            'det_config': "./creadto-model/cascade_rcnn_x101_64x4d_fpn_coco.py",
+            'det_checkpoint': "./creadto-model/cascade_rcnn_x101_64x4d_fpn_20e_coco_20200509_224357-051557b1.pth",
+            'pose_config': "./creadto-model/pct_large_classifier.py",
+            'pose_checkpoint': "./creadto-model/swin_large.pth",
+            'det_cat_id': 1,
+            'thickness': 2,
+            'bbox_thr': 0.3,
+            'device': device
+        }
+        args = EasyDict(args)
+        det_model = init_detector(args.det_config, args.det_checkpoint, device=args.device.lower())
+        pose_model = init_pose_model(args.pose_config, args.pose_checkpoint, device=args.device.lower())
+        dataset = pose_model.cfg.data['test']['type']
+        dataset_info = pose_model.cfg.data['test'].get('dataset_info', None)
+        dataset_info = DatasetInfo(dataset_info)
+
+        self.models = {
+            'det': det_model,
+            'pose': pose_model
+        }
+        self.func = {
+            'det': inference_detector,
+            'proc': process_mmdet_results,
+            'top_down': inference_top_down_pose_model,
+            'vis': vis_pose_result
+        }
+        self.utils = {
+            'dataset': dataset,
+            'dataset_info': dataset_info,
+        }
+        self.parameters = {
+            'det_cat_id': args.det_cat_id,
+            'bbox_thr': args.bbox_thr
+        }
+
+    def __call__(self, images=None, filenames=None):
+        if images is None:
+            images = filenames
+        result = []
+        for image in images:
+            # test a single image, the resulting box is (x1, y1, x2, y2)
+            det_boxes = self.func['det'](self.models['det'], image)
+            # keep the person class bounding boxes.
+            det_result = self.func['proc'](det_boxes, self.parameters['det_cat_id'])
+            pose_result, info = self.func['top_down'](
+                self.models['pose'],
+                image,
+                det_result,
+                bbox_thr=self.parameters['bbox_thr'],
+                format='xyxy',
+                dataset=self.utils['dataset'],
+                dataset_info=self.utils['dataset_info'],
+                return_heatmap=False,
+                outputs=None)
+            stub = dict()
+            stub['keypoints'] = torch.stack([torch.tensor(x['keypoints'], dtype=torch.float32) for x in pose_result])
+            stub['scores'] = torch.stack([torch.tensor(x['bbox'][-1], dtype=torch.float32) for x in pose_result])
+            stub['boxes'] = torch.stack([torch.tensor(x['bbox'][:4], dtype=torch.float32) for x in pose_result])
+            center_x = (stub['boxes'][:, 2] + stub['boxes'][:, 0]) / 2.
+            center_y = (stub['boxes'][:, 3] + stub['boxes'][:, 1]) / 2.
+            stub['center'] = torch.cat([center_x, center_y])
+            stub['info'] = info
+            result.append(stub)
+        return result
+
+
 class GenderClassification:
     def __init__(self):
         from transformers import AutoImageProcessor, AutoModelForImageClassification
         self.label = ['female', 'male']
         self.encoder = AutoImageProcessor.from_pretrained("rizvandwiki/gender-classification")
         self.model = AutoModelForImageClassification.from_pretrained("rizvandwiki/gender-classification")
-        
+
     def __call__(self, x):
         o = self.model(x)
-        output = [self.label[torch.argmax(i)] for i in o]
+        output = [self.label[torch.argmax(i)] for i in o.logits]
         return output
-        
+
+
 class FaceAlignmentLandmarker:
     def __init__(self):
         import face_alignment
@@ -91,6 +168,8 @@ class MediaPipeLandmarker:
         self.presence = presence
 
     def __call__(self, image):
+        # import mediapipe as mp
+        # mp.Image.
         landmark = self.detector.detect(image)
         return landmark
 
@@ -179,4 +258,3 @@ class MediaPipeLandmarker:
         x_px = min(math.floor(normalized_x * image_width), image_width - 1)
         y_px = min(math.floor(normalized_y * image_height), image_height - 1)
         return x_px, y_px
-

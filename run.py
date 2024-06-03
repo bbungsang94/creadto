@@ -23,20 +23,15 @@ def train():
 def demo():
     from contents.demo import demo_gat_head
     demo_gat_head()
-
-
-class ImageClassificationCollator:
-    def __init__(self, feature_extractor):
-        
- 
-    def __call__(self, batch):
-        encodings = self.feature_extractor([x[0] for x in batch], return_tensors='pt')
-        encodings['labels'] = torch.tensor([x[1] for x in batch], dtype=torch.long)
-        return encodings 
     
     
 if __name__ == "__main__":
     import os
-    os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-    train()
+    # os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
+    # os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+    # os.environ["TORCH_USE_CUDA_DSA"] = '1'
+    from example.run_texture import procedure
+    procedure()
+
+
+    # train()

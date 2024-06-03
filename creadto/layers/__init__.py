@@ -1,6 +1,89 @@
+from typing import Dict, Union
 import numpy as np
 import torch
+import torch.nn as nn
 
+
+CONV_DIM_DICT = {
+    1: nn.Conv1d,
+    2: nn.Conv2d,
+    3: nn.Conv3d
+}
+TRANSPOSE_CONV_DIM_DICT = {
+    1: nn.ConvTranspose1d,
+    2: nn.ConvTranspose2d,
+    3: nn.ConvTranspose3d
+}
+BN_DIM_DICT = {
+    1: nn.BatchNorm1d,
+    2: nn.BatchNorm2d,
+    3: nn.BatchNorm3d,
+}
+
+
+def build_activation(
+    activ_cfg
+) -> Union[nn.ReLU, nn.LeakyReLU, nn.PReLU]:
+    ''' Builds activation functions
+    '''
+    if len(activ_cfg) == 0:
+        return None
+    activ_type = activ_cfg.get('type', 'relu')
+    inplace = activ_cfg.get('inplace', False)
+    if activ_type == 'relu':
+        return nn.ReLU(inplace=inplace)
+    elif activ_type == 'leaky-relu':
+        leaky_relu_cfg = activ_cfg.get('leaky_relu', {})
+        return nn.LeakyReLU(inplace=inplace, **leaky_relu_cfg)
+    elif activ_type == 'prelu':
+        prelu_cfg = activ_cfg.get('prelu', {})
+        return nn.PReLU(inplace=inplace, **prelu_cfg)
+    elif activ_type == 'none':
+        return None
+    else:
+        raise ValueError(f'Unknown activation type: {activ_type}')
+
+
+def build_norm_layer(
+    input_dim: int,
+    norm_cfg: Dict,
+    dim: int = 1
+) -> nn.Module:
+    ''' Builds normalization modules
+    '''
+    if len(norm_cfg) == 0:
+        return None
+    norm_type = norm_cfg.get('type', 'bn')
+    if norm_type == 'bn' or norm_type == 'batch-norm':
+        bn_cfg = norm_cfg.get('batch_norm', {})
+        if dim in BN_DIM_DICT:
+            return BN_DIM_DICT[dim](input_dim, **bn_cfg)
+        else:
+            raise ValueError(f'Wrong dimension for BN: {dim}')
+    elif norm_type == 'ln' or norm_type == 'layer-norm':
+        layer_norm_cfg = norm_cfg.get('layer_norm', {})
+        return nn.LayerNorm(input_dim, **layer_norm_cfg)
+    elif norm_type == 'gn':
+        group_norm_cfg = norm_cfg.get('group_norm', {})
+        return nn.GroupNorm(num_channels=input_dim, **group_norm_cfg)
+    elif norm_type.lower() == 'none':
+        return None
+    else:
+        raise ValueError(f'Unknown normalization type: {norm_type}')
+
+
+def build_rnn_cell(
+    input_size: int,
+    rnn_type='lstm',
+    hidden_size=1024,
+    bias=True
+) -> Union[nn.LSTMCell, nn.GRUCell]:
+    if rnn_type == 'lstm':
+        return nn.LSTMCell(input_size, hidden_size=hidden_size, bias=bias)
+    elif rnn_type == 'gru':
+        return nn.GRUCell(input_size, hidden_size=hidden_size, bias=bias)
+    else:
+        raise ValueError(f'Unknown RNN type: {rnn_type}')
 
 def identity(x):
     return x
