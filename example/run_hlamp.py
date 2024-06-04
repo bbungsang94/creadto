@@ -1,4 +1,5 @@
 import os
+import os.path as osp
 import cv2
 import torch
 import torchvision
@@ -83,13 +84,13 @@ def head_to_measure(vertices):
     return tailor.order(gender=["female"] * vertices.shape[0], visualize=False, normalize=False)
 
 
-def procedure():
+def procedure(root):
     import open3d as o3d
     from creadto.models.legacy import ModelConcatenator
     concatenator = ModelConcatenator(root="./creadto-model")
-    face_model = image_to_flaep(root=r"D:\dump")
+    face_model = image_to_flaep(root=osp.join(root, "input_images"))
     gender = image_to_gender(images=face_model['crop_image'])
-    body_model = image_to_blass(root=r"D:\dump")
+    body_model = image_to_blass(root=osp.join(root, "input_images"))
 
     for i, v in enumerate(body_model['vertex']):
         mesh = o3d.geometry.TriangleMesh()

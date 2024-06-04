@@ -1,3 +1,4 @@
+import copy
 from typing import List, Tuple
 from PIL.Image import Image
 import torch
@@ -11,24 +12,57 @@ class NakedHuman:
         from creadto.models.recon import DetailFaceModel
         model_root = "creadto-model"
         self.flaep = DetailFaceModel()
+        self.bridge = np.load(osp.join(model_root, "flame", "flame2smplx_tex_1024.npy"))
         self.head_map = torch.load(osp.join(model_root, "textures", "head_texture_map.pt"))
+        self.body_map = torch.load(osp.join(model_root, "textures", "body_texture_map.pt"))
         self.mst = np.load(osp.join(model_root, "textures", "MSTScale", "MSTScaleRGB.npy"))
         self.device = torch.device(device)
         
-    def __call__(self, images: List[Image]):
+    def __call__(self, images: List[Image], models):
         down_sample = transforms.Compose([transforms.Resize((256, 256))])
         up_sample = transforms.Compose([transforms.Resize((512, 512))])
         crop_images, process = self.flaep.encode_pil(images)
         result = self.flaep.decode(crop_images)
         
-        pre_texture = self.make_head(result["uv_texture_gt"])
-        # result = self.flaep.decode(crop_images, external_tex=down_sample(pre_texture))
-        # output_texture = self.make_head(result["uv_texture_gt"])
+        pre_texture, _ = self.make_head(result["uv_texture_gt"])
+        result = self.flaep.decode(crop_images, external_tex=down_sample(pre_texture))
+        output_texture, tone_indices = self.make_head(result["uv_texture_gt"])
         
-        result["uv_texture_gt"] = pre_texture
-        result["uv_detail_normals"] = up_sample(result["uv_detail_normals"])
-        self.flaep.reconstructor.save_obj(osp.join(r"D:\dump\head_model_test\output_models", "head.obj"), result)
+        full_texture = self.map_body(output_texture, tone_indices)
+        return full_texture
+    
+    def map_body(self, head_albedos: torch.Tensor, tone_indices: torch.Tensor):
+        device = head_albedos.device
+        dtype = head_albedos.dtype
         
+        x_coords = torch.tensor(self.bridge['x_coords'], dtype=torch.int32, device=device, requires_grad=False)
+        y_coords = torch.tensor(self.bridge['y_coords'], dtype=torch.int32, device=device, requires_grad=False)
+        target_pixel_ids = torch.tensor(self.bridge['target_pixel_ids'], dtype=torch.int32, device=device, requires_grad=False)
+        source_uv_points = torch.tensor(self.bridge['source_uv_points'], dtype=torch.float32, device=device, requires_grad=False)
+    
+        mst = torch.tensor(self.mst, dtype=dtype, device=device, requires_grad=False) / 255.
+        
+        body_albedos = []
+        for head_albedo, tone in zip(head_albedos, tone_indices):
+            body_albedo = copy.deepcopy(self.head_map['default_albedo'])
+            base_mask = torch.ones((body_albedo.shape[1], body_albedo.shape[2]), device=mst.device, dtype=torch.bool, requires_grad=False)
+            for i in range(3):
+                mono_albedo = body_albedo[i]
+                min_value, max_value = mst.min(dim=0)[0][i] - (10 / 255.), mst.max(dim=0)[0][i] + (60 / 255.)
+                base_mask &= (mono_albedo >= min_value) & (mono_albedo <= max_value)
+            
+            base_basis = base_mask.unsqueeze(dim=0).expand_as(body_albedo) * (mst[tone] - self.body_map['mean']).view(-1, 1, 1)
+            body_albedo = torch.clamp(body_albedo + base_basis, 0.0, 1.0)
+            
+            source_tex_coords = torch.zeros(source_uv_points.shape[0], source_uv_points[1], dtype=torch.int32)
+            source_tex_coords[:, 0] = torch.clamp(head_albedos.shape[1]*(1.0-source_uv_points[:,1]), 0.0, head_albedos.shape[1]).type(torch.IntTensor)
+            source_tex_coords[:, 1] = torch.clamp(head_albedos.shape[2]*(source_uv_points[:,0]), 0.0, head_albedos.shape[2]).type(torch.IntTensor)
+
+            body_albedo[:, y_coords[target_pixel_ids], x_coords[target_pixel_ids]] = head_albedo[:, source_tex_coords[:,0], source_tex_coords[:,1]]
+            body_albedos.append(body_albedo)
+        
+        return body_albedos
+            
     def make_head(self, albedo: torch.Tensor):
         """_summary_
 
@@ -42,7 +76,7 @@ class NakedHuman:
         self.save_images("skin-image.jpg", skin_albedo)
         tone_indices, tone_diff = self.detect_skin(skin_albedo=skin_albedo)
         fetched = self.fetch_skin(albedo=albedo, indices=tone_indices, tone_diffs=tone_diff)
-        return fetched
+        return fetched, tone_indices
     
     def smooth_contour(self, single_image: torch.Tensor):
         """_summary_
