@@ -90,30 +90,32 @@ def procedure(root):
     import trimesh
     import open3d as o3d
     from creadto.models.legacy import ModelConcatenator
+    from creadto.utils.io import save_mesh
     concatenator = ModelConcatenator(root="./creadto-model")
     face_model, recon_model = image_to_flaep(root=osp.join(root, "input_images"))
     gender = image_to_gender(images=face_model['crop_image'])
     body_model = image_to_blass(root=osp.join(root, "input_images"))
-
+    body_measurement = body_to_measure(body_model['plane_vertex'], gender)
+    face_measurement = head_to_measure(face_model['plane_verts'])
+    humans = concatenator.update_model(body=body_model['plane_vertex'], head=face_model['plane_verts'], visualize=True)
+    
     if osp.exists(osp.join(root, "posed_model")) is False:
         os.mkdir(osp.join(root, "posed_model"))
     if osp.exists(osp.join(root, "plane_model")) is False:
         os.mkdir(osp.join(root, "plane_model"))
-        
+    
+    # save only vertices and faces, no textures, no normal maps, no materials
     for i, v in enumerate(body_model['vertex']):
         mesh = o3d.geometry.TriangleMesh()
         mesh.vertices = o3d.utility.Vector3dVector(v.cpu().detach().numpy())
         mesh.triangles = o3d.utility.Vector3iVector(body_model['face'])
         file_path = face_model['names'][i].split('.')[0]
         file_path = file_path.replace("input_images", "posed_model")
-        o3d.io.write_triangle_mesh(file_path + ".obj", mesh)
-    body_measurement = body_to_measure(body_model['plane_vertex'], gender)
-    face_measurement = head_to_measure(face_model['plane_verts'])
-    humans = concatenator.update_model(body=body_model['plane_vertex'], head=face_model['plane_verts'], visualize=True)
-    for i, v in enumerate(humans['model']['body']):
-        mesh = o3d.geometry.TriangleMesh()
-        mesh.vertices = o3d.utility.Vector3dVector(v.cpu().detach().numpy())
-        mesh.triangles = o3d.utility.Vector3iVector(body_model['face'])
-        file_path = face_model['names'][i].split('.')[0]
-        file_path = file_path.replace("input_images", "plane_model")
-        o3d.io.write_triangle_mesh(file_path + ".obj", mesh)
+        save_mesh(obj_name=file_path + ".obj", vertices=v, faces=body_model['face'])
+    # for i, v in enumerate(humans['model']['body']):
+    #     mesh = o3d.geometry.TriangleMesh()
+    #     mesh.vertices = o3d.utility.Vector3dVector(v.cpu().detach().numpy())
+    #     mesh.triangles = o3d.utility.Vector3iVector(body_model['face'])
+    #     file_path = face_model['names'][i].split('.')[0]
+    #     file_path = file_path.replace("input_images", "plane_model")
+    #     o3d.io.write_triangle_mesh(file_path + ".obj", mesh)

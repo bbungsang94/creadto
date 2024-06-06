@@ -47,61 +47,97 @@ def load_mesh(mesh_path):
     return np.array(vertices), np.array(indices), np.array(uvs), np.array(uv_indices)
 
 
-def save_mesh(filename, vertices, faces, textures=None, uvcoords=None, uvfaces=None, texture_type='surface'):
-    assert vertices.ndimension() == 2
-    assert faces.ndimension() == 2
-    assert texture_type in ['surface', 'vertex']
-    # assert texture_res >= 2
+def save_mesh(obj_name,
+              vertices,
+              faces,
+              colors=None,
+              texture=None,
+              uvcoords=None,
+              uvfaces=None,
+              inverse_face_order=False,
+              normal_map=None,
+              ):
+    ''' Save 3D face model with texture. 
+    Ref: https://github.com/patrikhuber/eos/blob/bd00155ebae4b1a13b08bf5a991694d682abbada/include/eos/core/Mesh.hpp
+    Args:
+        obj_name: str
+        vertices: shape = (nver, 3)
+        colors: shape = (nver, 3)
+        faces: shape = (ntri, 3)
+        texture: shape = (uv_size, uv_size, 3)
+        uvcoords: shape = (nver, 2) max value<=1
+    '''
+    if os.path.splitext(obj_name)[-1] != '.obj':
+        obj_name = obj_name + '.obj'
+    mtl_name = obj_name.replace('.obj', '.mtl')
+    texture_name = obj_name.replace('.obj', '.png')
+    material_name = 'FaceTexture'
 
-    if textures is not None and texture_type == 'surface':
-        textures =textures.detach().cpu().numpy().transpose(1,2,0)
-        filename_mtl = filename[:-4] + '.mtl'
-        filename_texture = filename[:-4] + '.png'
-        material_name = 'material_1'
-        # texture_image, vertices_textures = create_texture_image(textures, texture_res)
-        texture_image = textures
-        texture_image = texture_image.clip(0, 1)
-        texture_image = (texture_image * 255).astype('uint8')
-        imsave(filename_texture, texture_image)
+    faces = faces.copy()
+    # mesh lab start with 1, python/c++ start from 0
+    faces += 1
+    if inverse_face_order:
+        faces = faces[:, [2, 1, 0]]
+        if uvfaces is not None:
+            uvfaces = uvfaces[:, [2, 1, 0]]
 
-    faces = faces.detach().cpu().numpy()
+    # write obj
+    with open(obj_name, 'w') as f:
+        # first line: write mtlib(material library)
+        # f.write('# %s\n' % os.path.basename(obj_name))
+        # f.write('#\n')
+        # f.write('\n')
+        if texture is not None:
+            f.write('mtllib %s\n\n' % os.path.basename(mtl_name))
 
-    with open(filename, 'w') as f:
-        f.write('# %s\n' % os.path.basename(filename))
-        f.write('#\n')
-        f.write('\n')
-
-        if textures is not None:
-            f.write('mtllib %s\n\n' % os.path.basename(filename_mtl))
-
-        if textures is not None and texture_type == 'vertex':
-            for vertex, color in zip(vertices, textures):
-                f.write('v %.8f %.8f %.8f %.8f %.8f %.8f\n' % (vertex[0], vertex[1], vertex[2],
-                                                               color[0], color[1], color[2]))
-            f.write('\n')
+        # write vertices
+        if colors is None:
+            for i in range(vertices.shape[0]):
+                f.write('v {} {} {}\n'.format(vertices[i, 0], vertices[i, 1], vertices[i, 2]))
         else:
-            for vertex in vertices:
-                f.write('v %.8f %.8f %.8f\n' % (vertex[0], vertex[1], vertex[2]))
-            f.write('\n')
+            for i in range(vertices.shape[0]):
+                f.write('v {} {} {} {} {} {}\n'.format(vertices[i, 0], vertices[i, 1], vertices[i, 2], colors[i, 0], colors[i, 1], colors[i, 2]))
 
-        if textures is not None and texture_type == 'surface':
-            for vertex in uvcoords.reshape((-1, 2)):
-                f.write('vt %.8f %.8f\n' % (vertex[0], vertex[1]))
-            f.write('\n')
-
+        # write uv coords
+        if texture is None:
+            for i in range(faces.shape[0]):
+                f.write('f {} {} {}\n'.format(faces[i, 2], faces[i, 1], faces[i, 0]))
+        else:
+            for i in range(uvcoords.shape[0]):
+                f.write('vt {} {}\n'.format(uvcoords[i,0], uvcoords[i,1]))
             f.write('usemtl %s\n' % material_name)
-            for i, face in enumerate(faces):
-                f.write('f %d/%d %d/%d %d/%d\n' % (
-                    face[0] + 1, uvfaces[i,0]+1, face[1] + 1, uvfaces[i,1]+1, face[2] + 1, uvfaces[i,2]+1))
-            f.write('\n')
-        else:
-            for face in faces:
-                f.write('f %d %d %d\n' % (face[0] + 1, face[1] + 1, face[2] + 1))
+            # write f: ver ind/ uv ind
+            uvfaces = uvfaces + 1
+            for i in range(faces.shape[0]):
+                f.write('f {}/{} {}/{} {}/{}\n'.format(
+                    #  faces[i, 2], uvfaces[i, 2],
+                    #  faces[i, 1], uvfaces[i, 1],
+                    #  faces[i, 0], uvfaces[i, 0]
+                    faces[i, 0], uvfaces[i, 0],
+                    faces[i, 1], uvfaces[i, 1],
+                    faces[i, 2], uvfaces[i, 2]
+                )
+                )
+            # write mtl
+            with open(mtl_name, 'w') as f:
+                f.write('newmtl %s\n' % material_name)
+                s = 'map_Kd {}\n'.format(os.path.basename(texture_name)) # map to image
+                f.write(s)
 
-    if textures is not None and texture_type == 'surface':
-        with open(filename_mtl, 'w') as f:
-            f.write('newmtl %s\n' % material_name)
-            f.write('map_Kd %s\n' % os.path.basename(filename_texture))
+                if normal_map is not None:
+                    name, _ = os.path.splitext(obj_name)
+                    normal_name = f'{name}_normals.png'
+                    f.write(f'disp {normal_name}')
+                    # out_normal_map = normal_map / (np.linalg.norm(
+                    #     normal_map, axis=-1, keepdims=True) + 1e-9)
+                    # out_normal_map = (out_normal_map + 1) * 0.5
+
+                    cv2.imwrite(
+                        normal_name,
+                        # (out_normal_map * 255).astype(np.uint8)[:, :, ::-1]
+                        normal_map
+                    )
+            cv2.imwrite(texture_name, texture)
 
 
 def get_loader(root='./'):
