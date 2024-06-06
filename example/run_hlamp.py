@@ -16,8 +16,8 @@ def image_to_gender(images):
 def image_to_blass(root):
     from creadto.models.recon import BLASS
 
-    files = os.listdir(os.path.join(root, "raw"))
-    files = [os.path.join(root, "raw", x) for x in files]
+    files = os.listdir(root)
+    files = [os.path.join(root, x) for x in files]
     raw_images = []
     hlamp = BLASS()
     h = 450
@@ -47,7 +47,9 @@ def image_to_flaep(root):
         image = cv2.resize(image, dsize=(w, h), interpolation=cv2.INTER_LINEAR)
         raw_images.append(trans(image))
     raw_images = torch.stack(raw_images, dim=0)
-    return flaep(raw_images), flaep.reconstructor
+    result = flaep(raw_images)
+    result['names'] = files
+    return result, flaep.reconstructor
 
 
 def body_to_measure(vertices, gender):
@@ -85,23 +87,33 @@ def head_to_measure(vertices):
 
 
 def procedure(root):
+    import trimesh
     import open3d as o3d
     from creadto.models.legacy import ModelConcatenator
     concatenator = ModelConcatenator(root="./creadto-model")
-    face_model = image_to_flaep(root=osp.join(root, "input_images"))
+    face_model, recon_model = image_to_flaep(root=osp.join(root, "input_images"))
     gender = image_to_gender(images=face_model['crop_image'])
     body_model = image_to_blass(root=osp.join(root, "input_images"))
 
+    if osp.exists(osp.join(root, "posed_model")) is False:
+        os.mkdir(osp.join(root, "posed_model"))
+    if osp.exists(osp.join(root, "plane_model")) is False:
+        os.mkdir(osp.join(root, "plane_model"))
+        
     for i, v in enumerate(body_model['vertex']):
         mesh = o3d.geometry.TriangleMesh()
         mesh.vertices = o3d.utility.Vector3dVector(v.cpu().detach().numpy())
         mesh.triangles = o3d.utility.Vector3iVector(body_model['face'])
-        o3d.io.write_triangle_mesh(os.path.join("D:\dump\model", "%05d.obj" % i), mesh)
+        file_path = face_model['names'][i].split('.')[0]
+        file_path = file_path.replace("input_images", "posed_model")
+        o3d.io.write_triangle_mesh(file_path + ".obj", mesh)
     body_measurement = body_to_measure(body_model['plane_vertex'], gender)
-    face_measurement = head_to_measure(face_model['trans_verts'])
+    face_measurement = head_to_measure(face_model['plane_verts'])
     humans = concatenator.update_model(body=body_model['plane_vertex'], head=face_model['plane_verts'], visualize=True)
     for i, v in enumerate(humans['model']['body']):
         mesh = o3d.geometry.TriangleMesh()
         mesh.vertices = o3d.utility.Vector3dVector(v.cpu().detach().numpy())
         mesh.triangles = o3d.utility.Vector3iVector(body_model['face'])
-        o3d.io.write_triangle_mesh(os.path.join("D:\dump\plane", "%05d.obj" % i), mesh)
+        file_path = face_model['names'][i].split('.')[0]
+        file_path = file_path.replace("input_images", "plane_model")
+        o3d.io.write_triangle_mesh(file_path + ".obj", mesh)
