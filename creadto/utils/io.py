@@ -5,7 +5,7 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any
-
+from PIL.Image import Image
 import numpy as np
 import torch
 import yaml
@@ -51,11 +51,11 @@ def save_mesh(obj_name,
               vertices,
               faces,
               colors=None,
-              texture=None,
+              texture: Image = None,
               uvcoords=None,
               uvfaces=None,
               inverse_face_order=False,
-              normal_map=None,
+              normal_map: Image = None,
               ):
     ''' Save 3D face model with texture. 
     Ref: https://github.com/patrikhuber/eos/blob/bd00155ebae4b1a13b08bf5a991694d682abbada/include/eos/core/Mesh.hpp
@@ -131,13 +131,8 @@ def save_mesh(obj_name,
                     # out_normal_map = normal_map / (np.linalg.norm(
                     #     normal_map, axis=-1, keepdims=True) + 1e-9)
                     # out_normal_map = (out_normal_map + 1) * 0.5
-
-                    cv2.imwrite(
-                        normal_name,
-                        # (out_normal_map * 255).astype(np.uint8)[:, :, ::-1]
-                        normal_map
-                    )
-            cv2.imwrite(texture_name, texture)
+                    normal_map.save(normal_name)
+            texture.save(texture_name)
 
 
 def get_loader(root='./'):

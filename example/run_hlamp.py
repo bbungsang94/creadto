@@ -105,13 +105,16 @@ def procedure(root):
         os.mkdir(osp.join(root, "plane_model"))
     
     # save only vertices and faces, no textures, no normal maps, no materials
-    for i, v in enumerate(body_model['vertex']):
+    for i, tup in enumerate(zip(body_model['vertex'], humans['model']['body'])):
+        v, pv = tup
         mesh = o3d.geometry.TriangleMesh()
         mesh.vertices = o3d.utility.Vector3dVector(v.cpu().detach().numpy())
         mesh.triangles = o3d.utility.Vector3iVector(body_model['face'])
         file_path = face_model['names'][i].split('.')[0]
-        file_path = file_path.replace("input_images", "posed_model")
-        save_mesh(obj_name=file_path + ".obj", vertices=v, faces=body_model['face'])
+        pose_path = file_path.replace("input_images", "posed_model")
+        save_mesh(obj_name=pose_path + ".obj", vertices=v, faces=body_model['face'])
+        plane_path = file_path.replace("input_images", "plane_model")
+        save_mesh(obj_name=plane_path + ".obj", vertices=pv, faces=body_model['face'])
     # for i, v in enumerate(humans['model']['body']):
     #     mesh = o3d.geometry.TriangleMesh()
     #     mesh.vertices = o3d.utility.Vector3dVector(v.cpu().detach().numpy())
