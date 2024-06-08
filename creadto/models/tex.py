@@ -12,7 +12,6 @@ class NakedHuman:
         from creadto.models.recon import DetailFaceModel
         model_root = "creadto-model"
         self.flaep = DetailFaceModel()
-        self.render = SRenderY(self.render_size, obj_filename=topology_path, uv_size=uv_size, rasterizer_type=self.rasterizer_type).to(self.device)
         self.bridge = np.load(osp.join(model_root, "flame", "flame2smplx_tex_1024.npy"), allow_pickle=True, encoding = 'latin1').item()
         self.head_map = torch.load(osp.join(model_root, "textures", "head_texture_map.pt"))
         self.body_map = torch.load(osp.join(model_root, "textures", "body_texture_map.pt"))
@@ -31,21 +30,6 @@ class NakedHuman:
         
         full_texture = self.map_body(output_texture, tone_indices)
         
-        uvcoords = self.flaep.reconstructor.render.raw_uvcoords.squeeze().cpu().numpy()
-        uvfaces = self.flaep.reconstructor.render.uvfaces.squeeze().cpu().numpy()
-        
-        # normal_map, uv_coordinates
-        """
-            util.write_obj(
-            objpath, vertices, faces,
-            colors=colors,
-            texture=uvmap,
-            uvcoords=uvcoords,
-            uvfaces=uvfaces,
-            inverse_face_order=False,
-            normal_map=opdict.get('normal_map'),
-        )
-        """
         return full_texture
     
     def map_body(self, head_albedos: torch.Tensor, tone_indices: torch.Tensor):
@@ -74,8 +58,8 @@ class NakedHuman:
             body_albedo = torch.clamp(body_albedo + base_basis, 0.0, 1.0)
             
             source_tex_coords = torch.zeros((source_uv_points.shape[0], source_uv_points.shape[1]), dtype=torch.int32, device=device, requires_grad=False)
-            source_tex_coords[:, 0] = torch.clamp(head_albedos.shape[1]*(1.0-source_uv_points[:,1]), 0.0, head_albedos.shape[1]).type(torch.IntTensor)
-            source_tex_coords[:, 1] = torch.clamp(head_albedos.shape[2]*(source_uv_points[:,0]), 0.0, head_albedos.shape[2]).type(torch.IntTensor)
+            source_tex_coords[:, 0] = torch.clamp(head_albedo.shape[1]*(1.0-source_uv_points[:,1]), 0.0, head_albedo.shape[1]).type(torch.IntTensor)
+            source_tex_coords[:, 1] = torch.clamp(head_albedo.shape[2]*(source_uv_points[:,0]), 0.0, head_albedo.shape[2]).type(torch.IntTensor)
 
             body_albedo[:, y_coords[target_pixel_ids], x_coords[target_pixel_ids]] = head_albedo[:, source_tex_coords[:,0], source_tex_coords[:,1]]
             body_albedos.append(body_albedo)

@@ -30,21 +30,56 @@ def read_json(full_path=''):
 
 
 def load_mesh(mesh_path):
-    cvt = lambda x, t: [t(y) for y in x]
-    mesh_text = Path(mesh_path).read_text().splitlines()
-    vertices, indices, uvs, uv_indices = [], [], [], []
-    for line in mesh_text:
-        if line.startswith("v "):
-            vertices.append(cvt(line.split(" ")[1:4], float))
-        if line.startswith("vt "):
-            uvs.append(cvt(line.split(" ")[1:], float))
-        if line.startswith("f "):
-            if '/' in line:
-                indices.append([int(x.split('/')[0]) - 1 for x in line.split(' ')[1:]])
-                uv_indices.append([int(x.split('/')[1]) - 1 for x in line.split(' ')[1:]])
-            else:
-                indices.append([int(x) - 1 for x in line.split(' ')[1:]])
-    return np.array(vertices), np.array(indices), np.array(uvs), np.array(uv_indices)
+    """ Ref: https://github.com/facebookresearch/pytorch3d/blob/25c065e9dafa90163e7cec873dbb324a637c68b7/pytorch3d/io/obj_io.py
+    Load a mesh from a file-like object.
+    """
+    with open(mesh_path, 'r') as f:
+        lines = [line.strip() for line in f]
+
+    verts, uvcoords = [], []
+    faces, uv_faces = [], []
+    # startswith expects each line to be a string. If the file is read in as
+    # bytes then first decode to strings.
+    if lines and isinstance(lines[0], bytes):
+        lines = [el.decode("utf-8") for el in lines]
+
+    for line in lines:
+        tokens = line.strip().split()
+        if line.startswith("v "):  # Line is a vertex.
+            vert = [float(x) for x in tokens[1:4]]
+            if len(vert) != 3:
+                msg = "Vertex %s does not have 3 values. Line: %s"
+                raise ValueError(msg % (str(vert), str(line)))
+            verts.append(vert)
+        elif line.startswith("vt "):  # Line is a texture.
+            tx = [float(x) for x in tokens[1:3]]
+            if len(tx) != 2:
+                raise ValueError(
+                    "Texture %s does not have 2 values. Line: %s" % (str(tx), str(line))
+                )
+            uvcoords.append(tx)
+        elif line.startswith("f "):  # Line is a face.
+            # Update face properties info.
+            face = tokens[1:]
+            face_list = [f.split("/") for f in face]
+            for vert_props in face_list:
+                # Vertex index.
+                faces.append(int(vert_props[0]))
+                if len(vert_props) > 1:
+                    if vert_props[1] != "":
+                        # Texture index is present e.g. f 4/1/1.
+                        uv_faces.append(int(vert_props[1]))
+
+    verts = torch.tensor(verts, dtype=torch.float32)
+    uvcoords = torch.tensor(uvcoords, dtype=torch.float32)
+    faces = torch.tensor(faces, dtype=torch.long); faces = faces.reshape(-1, 3) - 1
+    uv_faces = torch.tensor(uv_faces, dtype=torch.long); uv_faces = uv_faces.reshape(-1, 3) - 1
+    return (
+        verts,
+        faces,
+        uvcoords,
+        uv_faces
+    )
 
 
 def save_mesh(obj_name,
