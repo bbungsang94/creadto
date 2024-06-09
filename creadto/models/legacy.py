@@ -33,6 +33,7 @@ class ModelConcatenator:
 
         if vertex['body'] is not None:
             # fitting models into body
+            # 1. Scale dismatched, corn head and muscle of back
             body = vertex['body']
             if vertex['head'] is not None:
                 head = vertex['head'].cpu()
@@ -41,9 +42,11 @@ class ModelConcatenator:
                 head_inplace = body[:, self.ids['head'], :]
                 inplace_max, _ = head_inplace.max(dim=1)
                 inplace_min, _ = head_inplace.min(dim=1)
-                ratio = (head_max - head_min) / (inplace_max - inplace_min)
-                pivot = inplace_min - head_min
+                ratio = (inplace_max - inplace_min) / (head_max - head_min)
                 head = head * ratio.unsqueeze(dim=1)
+                
+                head_min, _ = head.min(dim=1)
+                pivot = inplace_min - head_min
                 head = head + pivot.unsqueeze(dim=1)
                 body[:, self.ids['head'], :] = head
                 self.human['model']['body'] = body
