@@ -24,10 +24,9 @@ class NakedHuman:
         crop_images, process = self.flaep.encode_pil(images)
         result = self.flaep.decode(crop_images)
         
-        pre_texture, _ = self.make_head(result["uv_texture_gt"])
-        result = self.flaep.decode(crop_images, external_tex=down_sample(pre_texture))
+        # pre_texture, _ = self.make_head(result["uv_texture_gt"])
+        # result = self.flaep.decode(crop_images, external_tex=down_sample(pre_texture))
         output_texture, tone_indices = self.make_head(result["uv_texture_gt"])
-        
         full_texture = self.map_body(output_texture, tone_indices)
         
         return full_texture

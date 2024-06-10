@@ -57,6 +57,18 @@ def map_body_texture(face_texture_path, mask_path):
     cv2.imwrite("padding_face.jpg", face_texture)
     cv2.imwrite("padding_mask.jpg", mask)
 
+def merge_mask(root=r"D:\Creadto\CreadtoLibrary\creadto-model\flame\mask_images", parts=["eye_region", "eyeball", "lips"]):
+    mask_files = os.listdir(root)
+    observed_mask = np.zeros((512, 512))
+    for mask_file in mask_files:
+        if mask_file.replace(".jpg", "") not in parts:
+            continue
+        mask = cv2.imread(osp.join(root, mask_file), cv2.IMREAD_GRAYSCALE)
+        _, mask = cv2.threshold(mask, 128, 255, cv2.THRESH_BINARY)
+        observed_mask = cv2.bitwise_or(observed_mask, mask)
+    
+    cv2.imwrite("ovserved_mask.jpg", observed_mask)
+    
 def merge_face_default(face_path, mask_root):
     face_image = cv2.imread(face_path, cv2.IMREAD_COLOR)
     face_image = cv2.resize(face_image, (512, 512))
@@ -248,7 +260,7 @@ def match_skin(face_path=r"./output/deca_output.png",
         cv2.imwrite(prefix + "final_output.png", final_image)
     return cv2.cvtColor(final_image, cv2.COLOR_BGR2RGB)
 
-def  run_full_cycle(root):
+def run_full_cycle(root):
     import torch
     from PIL import Image
     from torchvision.transforms import ToTensor, ToPILImage
@@ -314,11 +326,12 @@ def resize_to(root=r"D:\dump\head_model_test\input_images\imgs", target=(512, 51
         cv2.imwrite(osp.join(root, "%d-%s" %(target[0], file)), image)
         
 if __name__ == "__main__":
+    merge_mask()
     # make_contour_mask()
     # make_images(mask_root=r"D:\Creadto\CreadtoLibrary\creadto-model\flame\mask_images", origin_root=r"D:\Creadto\CreadtoLibrary\creadto-model\flame\default_texture")
     # map_body_texture(r"D:\Creadto\CreadtoLibrary\output\only_face.jpg", r"D:\Creadto\CreadtoLibrary\output\inference_mask.jpg")
     # merge_face_default(face_path=r"D:\dump\temp\result_head-0th.png", mask_root=r"D:\Creadto\CreadtoLibrary\creadto-model\flame\mask_images")
     # map_body_texture(face_texture_path=r"./merged_image.png", mask_path=r"D:\Creadto\CreadtoLibrary\creadto-model\flame\mask_images\inference_mask.jpg")
     # modify_skin_color()
-    run_full_cycle(root=r"D:/dump/head_model_test")
+    #run_full_cycle(root=r"D:/dump/head_model_test")
     # run_cut_only_head_image()
