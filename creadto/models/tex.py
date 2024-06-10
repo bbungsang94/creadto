@@ -184,7 +184,7 @@ if __name__ == "__main__":
     import cv2
     
     model_root = "creadto-model"
-    albedo_path = osp.join(model_root, "flame", "default_texture", "realistic_origin.png")
+    albedo_path = r"D:\Creadto\CreadtoLibrary\creadto-model\textures\MSTScale\Samples\default_head (1).png"
     skin_mask_path = osp.join(model_root, "flame", "mask_images", "skin.jpg")
     observed_mask_path = osp.join(model_root, "flame", "mask_images", "observed_mask.jpg")
     contour_path = osp.join(model_root, "flame", "mask_images", "face_contour.jpg")
@@ -208,7 +208,7 @@ if __name__ == "__main__":
     print(torch.unique(contour_mask[0]))
     head_texture_kit = {
         'default_albedo': default_albedo,
-        'mean': torch.tensor([0.8115, 0.7306, 0.6998], dtype=torch.float32),
+        'mean': torch.tensor([0.9519, 0.9268, 0.8955], dtype=torch.float32),
         'skin_mask': skin_mask.expand_as(default_albedo),
         'face_mask': face_mask.expand_as(default_albedo),
         'contour_mask': contour_mask.expand_as(default_albedo),

@@ -57,15 +57,15 @@ def map_body_texture(face_texture_path, mask_path):
     cv2.imwrite("padding_face.jpg", face_texture)
     cv2.imwrite("padding_mask.jpg", mask)
 
-def merge_mask(root=r"D:\Creadto\CreadtoLibrary\creadto-model\flame\mask_images", parts=["eye_region", "eyeball", "lips"]):
+def merge_mask(root=r"D:\Creadto\CreadtoLibrary\creadto-model\flame\mask_images", parts=["left_eye_region", "right_eye_region", "left_eyeball", "right_eyeball", "lips"]):
     mask_files = os.listdir(root)
-    observed_mask = np.zeros((512, 512))
+    observed_mask = np.zeros((512, 512), dtype=np.uint8)
     for mask_file in mask_files:
         if mask_file.replace(".jpg", "") not in parts:
             continue
         mask = cv2.imread(osp.join(root, mask_file), cv2.IMREAD_GRAYSCALE)
         _, mask = cv2.threshold(mask, 128, 255, cv2.THRESH_BINARY)
-        observed_mask = cv2.bitwise_or(observed_mask, mask)
+        observed_mask = cv2.add(observed_mask, mask)
     
     cv2.imwrite("ovserved_mask.jpg", observed_mask)
     
@@ -151,7 +151,7 @@ def modify_skin_color(mst_root=r"creadto-model\textures\MonkSkinToneScale\MST Sw
 
 
 def match_skin(face_path=r"./output/deca_output.png",
-               default_path=r"./creadto-model/flame/default_texture/realistic_origin.png",
+               default_path=r"./creadto-model/textures/MSTScale/Samples/default_head (1).png",
                skin_mask_path=r"./creadto-model/flame/mask_images/skin.jpg",
                observed_mask_path=r"./creadto-model/flame/mask_images/observed_mask.jpg",
                contour_path=r"./creadto-model/flame/mask_images/face_contour.jpg",
@@ -333,5 +333,5 @@ if __name__ == "__main__":
     # merge_face_default(face_path=r"D:\dump\temp\result_head-0th.png", mask_root=r"D:\Creadto\CreadtoLibrary\creadto-model\flame\mask_images")
     # map_body_texture(face_texture_path=r"./merged_image.png", mask_path=r"D:\Creadto\CreadtoLibrary\creadto-model\flame\mask_images\inference_mask.jpg")
     # modify_skin_color()
-    #run_full_cycle(root=r"D:/dump/head_model_test")
+    run_full_cycle(root=r"D:/dump/sample")
     # run_cut_only_head_image()
