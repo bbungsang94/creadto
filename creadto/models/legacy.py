@@ -33,6 +33,7 @@ class ModelConcatenator:
 
         if vertex['body'] is not None:
             # fitting models into body
+            # 1. Scale dismatched, corn head and muscle of back
             body = vertex['body']
             if vertex['head'] is not None:
                 head = vertex['head']

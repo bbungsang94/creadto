@@ -136,7 +136,7 @@ def save_mesh(obj_name,
         # write uv coords
         if texture is None:
             for i in range(faces.shape[0]):
-                f.write('f {} {} {}\n'.format(faces[i, 2], faces[i, 1], faces[i, 0]))
+                f.write('f {} {} {}\n'.format(faces[i, 0], faces[i, 1], faces[i, 2]))
         else:
             for i in range(uvcoords.shape[0]):
                 f.write('vt {} {}\n'.format(uvcoords[i,0], uvcoords[i,1]))

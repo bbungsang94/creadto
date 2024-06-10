@@ -136,8 +136,11 @@ class BLASS:
         result['body_images'] = self._encode(x, result['joint_info'])
         result['shape_parameters'] = self._to_param(result['body_images'])
         result['vertex'], result['3d_joint'] = self.body_decoder(**result['shape_parameters'])
+        pose = torch.zeros(batch_size, 55, 3, dtype=torch.float32)
+        pose[:, 13, 2] = -np.pi / 8.
+        pose[:, 14, 2] = np.pi / 8.
         result['plane_vertex'], _ = self.body_decoder(beta=result['shape_parameters']['beta'],
-                                                      pose=torch.zeros(batch_size, 55, 3, dtype=torch.float32),
+                                                      pose=pose,
                                                       offset=torch.zeros(batch_size, 3, dtype=torch.float32))
         result['face'] = self.body_decoder.faces
         result['scale'] = result['shape_parameters']['offset'][:, 0].view(-1, 1)

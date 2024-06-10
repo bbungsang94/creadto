@@ -97,7 +97,7 @@ def procedure(root):
     body_model = image_to_blass(root=osp.join(root, "input_images"))
     body_measurement = body_to_measure(body_model['plane_vertex'], gender)
     face_measurement = head_to_measure(face_model['plane_verts'])
-    humans = concatenator.update_model(body=body_model['plane_vertex'], head=face_model['plane_verts'], visualize=True)
+    humans = concatenator.update_model(body=body_model['plane_vertex'], head=face_model['plane_verts'], visualize=False)
     
     if osp.exists(osp.join(root, "posed_model")) is False:
         os.mkdir(osp.join(root, "posed_model"))
@@ -108,8 +108,9 @@ def procedure(root):
     for i, tup in enumerate(zip(body_model['vertex'], humans['model']['body'])):
         v, pv = tup
         mesh = o3d.geometry.TriangleMesh()
-        mesh.vertices = o3d.utility.Vector3dVector(v.cpu().detach().numpy())
+        mesh.vertices = o3d.utility.Vector3dVector(pv.cpu().detach().numpy())
         mesh.triangles = o3d.utility.Vector3iVector(body_model['face'])
+        o3d.visualization.draw_geometries([mesh])
         file_path = face_model['names'][i].split('.')[0]
         pose_path = file_path.replace("input_images", "posed_model")
         save_mesh(obj_name=pose_path + ".obj", vertices=v, faces=body_model['face'])
