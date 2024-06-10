@@ -91,7 +91,7 @@ def procedure(root):
     import open3d as o3d
     from creadto.models.legacy import ModelConcatenator
     from creadto.utils.io import save_mesh
-    concatenator = ModelConcatenator(root="./creadto-model")
+    concatenator = ModelConcatenator(root="./creadto-model/template")
     face_model, recon_model = image_to_flaep(root=osp.join(root, "input_images"))
     gender = image_to_gender(images=face_model['crop_image'])
     body_model = image_to_blass(root=osp.join(root, "input_images"))
