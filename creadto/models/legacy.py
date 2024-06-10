@@ -14,6 +14,7 @@ class ModelConcatenator:
             self.ids = pickle.load(f)
         self.ids.update({'head': np.load(os.path.join(root, "SMPL-X__FLAME_vertex_ids.npy"))})
         self.ids.update({'neck': np.load(os.path.join(root, "body_neck_indices.npy"))})
+        self.ids.update({'head_parts': np.load(os.path.join(root, "flame_masks.pkl"), allow_pickle=True, encoding='latin1')})
         self.human = {
             'model': {
                 'body': None,
@@ -36,26 +37,35 @@ class ModelConcatenator:
             # 1. Scale dismatched, corn head and muscle of back
             body = vertex['body']
             if vertex['head'] is not None:
-                head = vertex['head']
+                # fit sclae
+                head = vertex['head'].to(body.device)
                 partial_neck = body[:, self.ids['neck'], :]
                 inplace_max, _ = partial_neck.max(dim=1)
                 inplace_min, _ = partial_neck.min(dim=1)
+                coarse_head = copy.deepcopy(body[:, self.ids['head'], :])
                 
                 body[:, self.ids['head'], :] = head
                 target_neck = body[:, self.ids['neck'], :]
                 target_max, _ = target_neck.max(dim=1)
                 target_min, _ = target_neck.min(dim=1)
                 
-                ratio = (target_max - target_min) / (inplace_max - inplace_min)
-                body[:, self.ids['head'], :] = head * ratio.unsqueeze(dim=1)
-                target_neck = body[:, self.ids['neck'], :]
-                target_min, _ = target_neck.min(dim=1)
-
-                pivot = inplace_min - target_min
+                ratio = (inplace_max - inplace_min) / (target_max - target_min)
+                head = head * ratio.unsqueeze(dim=1)
+                # fit transform
+                coarse_boundary = coarse_head[:, self.ids['head_parts']['boundary'], :]
+                boundary = head[:, self.ids['head_parts']['boundary'], :]
+                inplace_center_top = (coarse_boundary.max(dim=1)[0] - coarse_boundary.min(dim=1)[0]) / 2. + coarse_boundary.min(dim=1)[0]
+                inplace_center_top[:, 1] = coarse_boundary.max(dim=1)[0][:, 1]
+                target_center_top = (boundary.max(dim=1)[0] - boundary.min(dim=1)[0]) / 2. + boundary.min(dim=1)[0]
+                target_center_top[:, 1] = boundary.max(dim=1)[0][:, 1]
+                pivot = inplace_center_top - target_center_top
+                head = head + pivot.unsqueeze(dim=1)
                 
-                body[:, self.ids['head'], :] = body[:, self.ids['head'], :] + pivot.unsqueeze(dim=1)
+                head[:, self.ids['head_parts']['boundary'], :] = coarse_boundary
+                body[:, self.ids['head'], :] = head
                 self.human['model']['body'] = body
-                self.human['model']['head'] = copy.deepcopy(body[:, self.ids['head'], :])
+                self.human['model']['head'] = copy.deepcopy(head)
+                self.human['model']['coarse_head'] = coarse_head
         if 'visualize' in kwargs and kwargs['visualize']:
             import open3d as o3d
             mesh = o3d.geometry.PointCloud()
