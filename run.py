@@ -44,7 +44,11 @@ def extract_shadow():
         
     
 if __name__ == "__main__":
+    import platform
     import os
+    
+    if platform.system().lower() == "linux":
+        os.environ['QT_QPA_PLATFORM'] = 'offscreen'
     # os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
     # os.environ["CUDA_VISIBLE_DEVICES"] = "0"
     # os.environ["TORCH_USE_CUDA_DSA"] = '1'
@@ -52,5 +56,5 @@ if __name__ == "__main__":
     from example.run_texture import procedure
     procedure("/workspace/sample")
     
-    extract_shadow()
+    # extract_shadow()
     # train()

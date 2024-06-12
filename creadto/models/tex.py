@@ -17,7 +17,8 @@ class NakedHuman:
                                                  device=device,
                                                  model_path=osp.join(model_root, "mobilenet0.25_Final.pth"))
         self.face_parser = facer.face_parser('farl/celebm/448',
-                                             model_path=osp.join(model_root, "face_parsing.farl.celebm.main_ema_181500_jit.pt", device=device)) # optional "farl/lapa/448"
+                                             model_path=osp.join(model_root, "face_parsing.farl.celebm.main_ema_181500_jit.pt"),
+                                             device=device) # optional "farl/lapa/448"
     
         self.bridge = np.load(osp.join(model_root, "flame", "flame2smplx_tex_1024.npy"), allow_pickle=True, encoding = 'latin1').item()
         self.head_map = torch.load(osp.join(model_root, "textures", "head_texture_map.pt"))
@@ -35,11 +36,12 @@ class NakedHuman:
         # pre_texture, _ = self.make_head(result["uv_texture_gt"])
         # result = self.flaep.decode(crop_images, external_tex=down_sample(pre_texture))
         output_texture, tone_indices = self.make_head(result["uv_texture_gt"])
-        full_texture = self.map_body(output_texture, tone_indices)
+        full_texture = self.map_body(output_texture, tone_indices, tone_values=skin_value / 255.)
         
         return full_texture
     
     def enhance_skin(self, images):
+        images = images * 255.
         device = images.device
         categories = {"background": 0, "neck": 1, "skin": 2, "cloth": 3,
                 "left_ear": 4, "right_ear": 5, "left_eyebrow": 6, "right_eyebrow": 7,
@@ -57,6 +59,9 @@ class NakedHuman:
         vis_img = vis_seg_probs.sum(0, keepdim=True)
         
         face_masks = seg_probs[:, categories['skin']] + seg_probs[:, categories['nose']]
+        
+        enhanced_images = []
+        skin_values = []
         for image, face_mask in zip(images, face_masks):
             vis = image * face_mask.expand_as(image)
             
@@ -88,9 +93,12 @@ class NakedHuman:
             mean_skin = (vis + flat_skin) / 2.0
             face_filter = face_mask.expand_as(image)
             enhanced = image * (1 - face_filter) + mean_skin * face_filter
-            return enhanced, mst_value
+            enhanced_images.append(enhanced)
+            skin_values.append(mst_value)
         
-    def map_body(self, head_albedos: torch.Tensor, tone_indices: torch.Tensor):
+        return torch.stack(enhanced_images), torch.stack(skin_values)
+        
+    def map_body(self, head_albedos: torch.Tensor, tone_indices: torch.Tensor, tone_values: torch.Tensor = None):
         device = head_albedos.device
         dtype = head_albedos.dtype
         for key in self.body_map:
@@ -104,7 +112,11 @@ class NakedHuman:
         mst = torch.tensor(self.mst, dtype=dtype, device=device, requires_grad=False) / 255.
         
         body_albedos = []
-        for head_albedo, tone in zip(head_albedos, tone_indices):
+        pack = zip(head_albedos, mst[tone_indices])
+        if tone_values is not None:
+            tone_values = tone_values.to(device)
+            pack = zip(head_albedos, tone_values)
+        for head_albedo, tone in pack:
             body_albedo = copy.deepcopy(self.body_map['default_albedo'])
             base_mask = torch.ones((body_albedo.shape[1], body_albedo.shape[2]), device=mst.device, dtype=torch.bool, requires_grad=False)
             for i in range(3):
@@ -112,7 +124,7 @@ class NakedHuman:
                 min_value, max_value = mst.min(dim=0)[0][i] - (10 / 255.), mst.max(dim=0)[0][i] + (60 / 255.)
                 base_mask &= (mono_albedo >= min_value) & (mono_albedo <= max_value)
             
-            base_basis = base_mask.unsqueeze(dim=0).expand_as(body_albedo) * (mst[tone] - self.body_map['mean']).view(-1, 1, 1)
+            base_basis = base_mask.unsqueeze(dim=0).expand_as(body_albedo) * (tone - self.body_map['mean']).view(-1, 1, 1)
             body_albedo = torch.clamp(body_albedo + base_basis, 0.0, 1.0)
             
             source_tex_coords = torch.zeros((source_uv_points.shape[0], source_uv_points.shape[1]), dtype=torch.int32, device=device, requires_grad=False)
@@ -237,39 +249,39 @@ class NakedHuman:
             filename = "%d-th %s" % (i, fname)
             utils.save_image(image, filename)
     
-if __name__ == "__main__":
-    import torchvision.io as io
-    from torchvision.transforms import ToTensor
-    import cv2
+# if __name__ == "__main__":
+#     import torchvision.io as io
+#     from torchvision.transforms import ToTensor
+#     import cv2
     
-    model_root = "creadto-model"
-    albedo_path = r"D:\Creadto\CreadtoLibrary\creadto-model\textures\MSTScale\Samples\default_head (1).png"
-    skin_mask_path = osp.join(model_root, "flame", "mask_images", "skin.jpg")
-    observed_mask_path = osp.join(model_root, "flame", "mask_images", "observed_mask.jpg")
-    contour_path = osp.join(model_root, "flame", "mask_images", "face_contour.jpg")
-    default_albedo = cv2.imread(albedo_path)
-    default_albedo = cv2.resize(default_albedo, (512, 512))
-    default_albedo = cv2.cvtColor(default_albedo, cv2.COLOR_BGR2RGB)
-    skin_mask = cv2.imread(skin_mask_path, cv2.IMREAD_GRAYSCALE)
-    face_mask = cv2.imread(observed_mask_path, cv2.IMREAD_GRAYSCALE)
-    contour_mask = cv2.imread(contour_path, cv2.IMREAD_GRAYSCALE)
-    _, skin_mask = cv2.threshold(skin_mask, 128, 255, cv2.THRESH_BINARY)
-    _, face_mask = cv2.threshold(face_mask, 128, 255, cv2.THRESH_BINARY)
-    _, contour_mask = cv2.threshold(contour_mask, 128, 255, cv2.THRESH_BINARY)
-    default_skin_image = cv2.bitwise_and(default_albedo, default_albedo, mask=skin_mask)
-    trans = ToTensor()
-    skin_mask = trans(skin_mask)
-    face_mask = trans(face_mask)
-    contour_mask = trans(contour_mask)
-    default_albedo = trans(default_albedo)
-    print(torch.unique(skin_mask[0]))
-    print(torch.unique(face_mask[0]))
-    print(torch.unique(contour_mask[0]))
-    head_texture_kit = {
-        'default_albedo': default_albedo,
-        'mean': torch.tensor([0.9519, 0.9268, 0.8955], dtype=torch.float32),
-        'skin_mask': skin_mask.expand_as(default_albedo),
-        'face_mask': face_mask.expand_as(default_albedo),
-        'contour_mask': contour_mask.expand_as(default_albedo),
-    }
-    torch.save(head_texture_kit, "head_texture_map.pt")
+#     model_root = "creadto-model"
+#     albedo_path = r"D:\Creadto\CreadtoLibrary\creadto-model\textures\MSTScale\Samples\default_head (1).png"
+#     skin_mask_path = osp.join(model_root, "flame", "mask_images", "skin.jpg")
+#     observed_mask_path = osp.join(model_root, "flame", "mask_images", "observed_mask.jpg")
+#     contour_path = osp.join(model_root, "flame", "mask_images", "face_contour.jpg")
+#     default_albedo = cv2.imread(albedo_path)
+#     default_albedo = cv2.resize(default_albedo, (512, 512))
+#     default_albedo = cv2.cvtColor(default_albedo, cv2.COLOR_BGR2RGB)
+#     skin_mask = cv2.imread(skin_mask_path, cv2.IMREAD_GRAYSCALE)
+#     face_mask = cv2.imread(observed_mask_path, cv2.IMREAD_GRAYSCALE)
+#     contour_mask = cv2.imread(contour_path, cv2.IMREAD_GRAYSCALE)
+#     _, skin_mask = cv2.threshold(skin_mask, 128, 255, cv2.THRESH_BINARY)
+#     _, face_mask = cv2.threshold(face_mask, 128, 255, cv2.THRESH_BINARY)
+#     _, contour_mask = cv2.threshold(contour_mask, 128, 255, cv2.THRESH_BINARY)
+#     default_skin_image = cv2.bitwise_and(default_albedo, default_albedo, mask=skin_mask)
+#     trans = ToTensor()
+#     skin_mask = trans(skin_mask)
+#     face_mask = trans(face_mask)
+#     contour_mask = trans(contour_mask)
+#     default_albedo = trans(default_albedo)
+#     print(torch.unique(skin_mask[0]))
+#     print(torch.unique(face_mask[0]))
+#     print(torch.unique(contour_mask[0]))
+#     head_texture_kit = {
+#         'default_albedo': default_albedo,
+#         'mean': torch.tensor([0.9519, 0.9268, 0.8955], dtype=torch.float32),
+#         'skin_mask': skin_mask.expand_as(default_albedo),
+#         'face_mask': face_mask.expand_as(default_albedo),
+#         'contour_mask': contour_mask.expand_as(default_albedo),
+#     }
+#     torch.save(head_texture_kit, "head_texture_map.pt")
