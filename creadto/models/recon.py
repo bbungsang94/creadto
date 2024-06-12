@@ -227,10 +227,12 @@ class DetailFaceModel:
             process.append(True)
         return torch.stack(crop_images, dim=0).to(self.device), process
     
-    def decode(self, images: torch.Tensor, external_tex=None):
+    def decode(self, images: torch.Tensor, external_tex=None, external_img=None):
         with torch.no_grad():
             embedding = self.reconstructor.encode(images.to(torch.device("cuda:0")))
-            o, v = self.reconstructor.decode(embedding, external_tex=external_tex)
+            o, v = self.reconstructor.decode(embedding,
+                                             external_tex=external_tex,
+                                             external_img=external_img)
             output = o
             output['latent'] = embedding
             output['visualize'] = v

@@ -9,9 +9,16 @@ from torchvision import transforms
 
 class NakedHuman:
     def __init__(self, device="cuda:0"):
+        import facer
         from creadto.models.recon import DetailFaceModel
         model_root = "creadto-model"
         self.flaep = DetailFaceModel()
+        self.face_detector = facer.face_detector('retinaface/mobilenet',
+                                                 device=device,
+                                                 model_path=osp.join(model_root, "mobilenet0.25_Final.pth"))
+        self.face_parser = facer.face_parser('farl/celebm/448',
+                                             model_path=osp.join(model_root, "face_parsing.farl.celebm.main_ema_181500_jit.pt", device=device)) # optional "farl/lapa/448"
+    
         self.bridge = np.load(osp.join(model_root, "flame", "flame2smplx_tex_1024.npy"), allow_pickle=True, encoding = 'latin1').item()
         self.head_map = torch.load(osp.join(model_root, "textures", "head_texture_map.pt"))
         self.body_map = torch.load(osp.join(model_root, "textures", "body_texture_map.pt"))
@@ -22,7 +29,8 @@ class NakedHuman:
         down_sample = transforms.Compose([transforms.Resize((256, 256))])
         up_sample = transforms.Compose([transforms.Resize((512, 512))])
         crop_images, process = self.flaep.encode_pil(images)
-        result = self.flaep.decode(crop_images)
+        enhanced_images, skin_value = self.enhance_skin(crop_images)
+        result = self.flaep.decode(crop_images, external_img=enhanced_images)
         
         # pre_texture, _ = self.make_head(result["uv_texture_gt"])
         # result = self.flaep.decode(crop_images, external_tex=down_sample(pre_texture))
@@ -31,6 +39,57 @@ class NakedHuman:
         
         return full_texture
     
+    def enhance_skin(self, images):
+        device = images.device
+        categories = {"background": 0, "neck": 1, "skin": 2, "cloth": 3,
+                "left_ear": 4, "right_ear": 5, "left_eyebrow": 6, "right_eyebrow": 7,
+                "left_eye": 8, "right_eye": 9, "nose": 10, "mouth": 11,
+                "lower_lip": 12, "upper_lip": 13, "hair": 14, "sunglasses": 15,
+                "hat": 16, "earring": 17, "necklace": 18}
+            
+        with torch.inference_mode():
+            faces = self.face_detector(images)
+            faces = self.face_parser(images, faces)
+        
+        seg_logits = faces['seg']['logits']
+        seg_probs = seg_logits.softmax(dim=1)
+        vis_seg_probs = seg_probs.argmax(dim=1).float()/len(categories)*255
+        vis_img = vis_seg_probs.sum(0, keepdim=True)
+        
+        face_masks = seg_probs[:, categories['skin']] + seg_probs[:, categories['nose']]
+        for image, face_mask in zip(images, face_masks):
+            vis = image * face_mask.expand_as(image)
+            
+            mask = torch.ones((image.shape[1], image.shape[2]), device=device, dtype=torch.bool)
+            for i in range(3):
+                mono_albedo = vis[i]
+                min_value, max_value = self.mst.min(axis=0)[i], self.mst.max(axis=0)[i] + 60
+                mask &= (mono_albedo >= min_value) & (mono_albedo <= max_value)
+            
+            mean_values = torch.zeros(3)        
+            for i in range(3):
+                mono_albedo = vis[i]
+                selected_values = mono_albedo[mask]
+                if selected_values.numel() > 0:
+                    mean_values[i] = selected_values.median()
+                else:
+                    mean_values[i] = float('nan')  # 값이 없을 경우 NaN
+            diff = torch.tensor(self.mst, dtype=mean_values.dtype, device=mean_values.device) - mean_values 
+            print(diff)
+            tone_index = torch.argmin(abs(diff).sum(dim=1))
+            # mst_value = mst[tone_index]
+            mst_value = mean_values
+            print(mst_value)
+            flat_skin = torch.zeros_like(vis)
+            mean_skin = torch.zeros_like(vis)
+            for i in range(3):
+                flat_skin[i, :, :] = face_mask * mst_value[i]
+
+            mean_skin = (vis + flat_skin) / 2.0
+            face_filter = face_mask.expand_as(image)
+            enhanced = image * (1 - face_filter) + mean_skin * face_filter
+            return enhanced, mst_value
+        
     def map_body(self, head_albedos: torch.Tensor, tone_indices: torch.Tensor):
         device = head_albedos.device
         dtype = head_albedos.dtype
