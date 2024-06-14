@@ -46,6 +46,7 @@ def procedure(root):
     # must be pair a set of vertex and faces and an texture image
     models, uvcoords, uvfaces = load_plane_models(osp.join(root, "plane_model"))
     result_dict, names = image_to_texture(osp.join(root, "input_images"))
+    
     for i, name in enumerate(names):
         name = name.split('.')[0]
         v, f = models[name]

@@ -1,3 +1,4 @@
+import copy
 import os
 import os.path as osp
 import cv2
@@ -49,15 +50,29 @@ def merged_images(face_image_path, default_root, mask_root, parts=["eye_region",
     cv2.imwrite("default.jpg", default_image)
     cv2.imwrite("merged_image.jpg", cv2.add(default_image, only_face_image))
     
-def map_body_texture(face_texture_path, mask_path):
-    face_texture = cv2.imread(face_texture_path)
-    mask = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
-    
-    face_texture = np.pad(face_texture, ((0, 584), (0, 410), (0, 0)), 'constant', constant_values=0)
-    mask = np.pad(mask, ((0, 584), (0, 410)), 'constant', constant_values=0)
-    cv2.imwrite("padding_face.jpg", face_texture)
-    cv2.imwrite("padding_mask.jpg", mask)
+def map_body_texture(head_albedo: torch.Tensor, body_albedo: torch.Tensor):
+    """_summary_
+    Args:
+        head_albedo (torch.Tensor): shape (c, 512, 512)
+        body_albedo (torch.Tensor): shape (c, 1024, 1024)
+    """
+    device = head_albedo.device
+    dtype = head_albedo.dtype
+    model_root = r"creadto-model"
+    bridge = np.load(osp.join(model_root, "flame", "flame2smplx_tex_1024.npy"), allow_pickle=True, encoding = 'latin1').item()
 
+    x_coords = torch.tensor(bridge['x_coords'], dtype=torch.int32, device=device, requires_grad=False)
+    y_coords = torch.tensor(bridge['y_coords'], dtype=torch.int32, device=device, requires_grad=False)
+    target_pixel_ids = torch.tensor(bridge['target_pixel_ids'], dtype=torch.int32, device=device, requires_grad=False)
+    source_uv_points = torch.tensor(bridge['source_uv_points'], dtype=torch.float32, device=device, requires_grad=False)
+    source_tex_coords = torch.zeros((source_uv_points.shape[0], source_uv_points.shape[1]), dtype=torch.int32, device=device, requires_grad=False)
+    source_tex_coords[:, 0] = torch.clamp(head_albedo.shape[1]*(1.0-source_uv_points[:,1]), 0.0, head_albedo.shape[1]).type(torch.IntTensor)
+    source_tex_coords[:, 1] = torch.clamp(head_albedo.shape[2]*(source_uv_points[:,0]), 0.0, head_albedo.shape[2]).type(torch.IntTensor)
+
+    body_albedo[:, y_coords[target_pixel_ids], x_coords[target_pixel_ids]] = head_albedo[:, source_tex_coords[:,0], source_tex_coords[:,1]]
+    albedo = copy.deepcopy(body_albedo)
+    return albedo
+        
 def merge_mask(root=r"D:\Creadto\CreadtoLibrary\creadto-model\flame\mask_images", parts=["left_eye_region", "right_eye_region", "left_eyeball", "right_eyeball", "lips"]):
     mask_files = os.listdir(root)
     observed_mask = np.zeros((512, 512), dtype=np.uint8)
@@ -404,7 +419,26 @@ def flat_head_skin(root=r"D:\dump\sample\head_images",
         face_filter = face_mask.expand_as(image)
         enhanced = image * (1 - face_filter) + mean_skin * face_filter
         facer.show_bchw(enhanced[None, :, :, :])
-        
+
+def dummy():
+    import torchvision
+    import torchvision.io as io
+    import torchvision.utils as util
+    root = r"D:\Creadto\CreadtoLibrary\creadto-model\textures\MSTScale\Samples"
+    body = "mono_body.png"
+    head = "mono_head.png"
+    resizer512 = torchvision.transforms.Resize((512, 512))
+    resizer1024 = torchvision.transforms.Resize((1024, 1024))
+    body_albedo = io.read_image(osp.join(root, body))
+    body_albedo = resizer1024(body_albedo)
+    head_albedo = io.read_image(osp.join(root, head))
+    head_albedo = resizer512(head_albedo)
+    
+    albedo = map_body_texture(head_albedo[:3], body_albedo[:3])
+    pil_image = torchvision.transforms.functional.to_pil_image(albedo)
+    pil_image.save("full_albedo.png")
+    pass
+    
 if __name__ == "__main__":
     # merge_mask()
     # make_contour_mask()
@@ -415,4 +449,4 @@ if __name__ == "__main__":
     # modify_skin_color()
     # run_full_cycle(root=r"D:/dump/sample")
     # run_cut_only_head_image()
-    flat_head_skin()
+    dummy()

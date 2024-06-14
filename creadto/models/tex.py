@@ -41,12 +41,13 @@ class NakedHuman:
         
         # pre_texture, _ = self.make_head(result["uv_texture_gt"])
         # result = self.flaep.decode(crop_images, external_tex=down_sample(pre_texture))
-        output_texture, tone_indices = self.make_head(result["uv_texture_gt"], skin_values=enhance_dict["skin_values"] / 255.)
-        full_texture = self.map_body(output_texture, tone_indices, tone_values=enhance_dict["skin_values"] / 255.)
+        head_albedo, tone_indices = self.make_head(result["uv_texture_gt"], skin_values=enhance_dict["skin_values"] / 255.)
+        full_texture = self.map_body(head_albedo, tone_indices, tone_values=enhance_dict["skin_values"] / 255.)
         
         vis_dict = {
             'head_images': crop_images,
             'face_detection': process,
+            'head_texture': head_albedo,
             'full_texture': full_texture
         }
         vis_dict.update(enhance_dict)
@@ -318,6 +319,9 @@ def make_head_map():
         'contour_mask': contour_mask.expand_as(default_albedo),
     }
     torch.save(head_texture_kit, "head_texture_map.pt")
-    
+
+def make_body_map():
+    pass
+
 if __name__ == "__main__":
     make_head_map()
