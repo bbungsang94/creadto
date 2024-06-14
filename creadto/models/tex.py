@@ -24,21 +24,33 @@ class NakedHuman:
         self.head_map = torch.load(osp.join(model_root, "textures", "head_texture_map.pt"))
         self.body_map = torch.load(osp.join(model_root, "textures", "body_texture_map.pt"))
         self.mst = np.load(osp.join(model_root, "textures", "MSTScale", "MSTScaleRGB.npy"))
+        self.mst = np.delete(self.mst, len(self.mst)-1, 0)
+        self.mst = np.delete(self.mst, len(self.mst)-1, 0)
+        # self.mst_bias = {'lower': 10, 'upper': 60}
+        self.mst_bias = {'lower': 0, 'upper': 30}
+    
         self.device = torch.device(device)
         
     def __call__(self, images: List[Image]):
         down_sample = transforms.Compose([transforms.Resize((256, 256))])
         up_sample = transforms.Compose([transforms.Resize((512, 512))])
+        vis_dict = dict()
         crop_images, process = self.flaep.encode_pil(images)
-        enhanced_images, skin_value = self.enhance_skin(crop_images)
-        result = self.flaep.decode(crop_images, external_img=enhanced_images)
+        enhance_dict = self.enhance_skin(crop_images)
+        result = self.flaep.decode(crop_images, external_img=enhance_dict["enhanced_images"] / 255.)
         
         # pre_texture, _ = self.make_head(result["uv_texture_gt"])
         # result = self.flaep.decode(crop_images, external_tex=down_sample(pre_texture))
-        output_texture, tone_indices = self.make_head(result["uv_texture_gt"])
-        full_texture = self.map_body(output_texture, tone_indices, tone_values=skin_value / 255.)
+        output_texture, tone_indices = self.make_head(result["uv_texture_gt"], skin_values=enhance_dict["skin_values"] / 255.)
+        full_texture = self.map_body(output_texture, tone_indices, tone_values=enhance_dict["skin_values"] / 255.)
         
-        return full_texture
+        vis_dict = {
+            'head_images': crop_images,
+            'face_detection': process,
+            'full_texture': full_texture
+        }
+        vis_dict.update(enhance_dict)
+        return vis_dict
     
     def enhance_skin(self, images):
         images = images * 255.
@@ -62,13 +74,14 @@ class NakedHuman:
         
         enhanced_images = []
         skin_values = []
+        detail_mask = []
         for image, face_mask in zip(images, face_masks):
             vis = image * face_mask.expand_as(image)
             
             mask = torch.ones((image.shape[1], image.shape[2]), device=device, dtype=torch.bool)
             for i in range(3):
                 mono_albedo = vis[i]
-                min_value, max_value = self.mst.min(axis=0)[i], self.mst.max(axis=0)[i] + 60
+                min_value, max_value = self.mst.min(axis=0)[i], self.mst.max(axis=0)[i] + self.mst_bias['upper']
                 mask &= (mono_albedo >= min_value) & (mono_albedo <= max_value)
             
             mean_values = torch.zeros(3)        
@@ -95,8 +108,12 @@ class NakedHuman:
             enhanced = image * (1 - face_filter) + mean_skin * face_filter
             enhanced_images.append(enhanced)
             skin_values.append(mst_value)
+            detail_mask.append(mask)
         
-        return torch.stack(enhanced_images), torch.stack(skin_values)
+        return {'enhanced_images': torch.stack(enhanced_images),
+                'skin_values': torch.stack(skin_values),
+                'face_masks': face_masks,
+                'detail_masks': torch.stack(detail_mask)}
         
     def map_body(self, head_albedos: torch.Tensor, tone_indices: torch.Tensor, tone_values: torch.Tensor = None):
         device = head_albedos.device
@@ -121,7 +138,7 @@ class NakedHuman:
             base_mask = torch.ones((body_albedo.shape[1], body_albedo.shape[2]), device=mst.device, dtype=torch.bool, requires_grad=False)
             for i in range(3):
                 mono_albedo = body_albedo[i]
-                min_value, max_value = mst.min(dim=0)[0][i] - (10 / 255.), mst.max(dim=0)[0][i] + (60 / 255.)
+                min_value, max_value = mst.min(dim=0)[0][i] - (self.mst_bias['lower'] / 255.), mst.max(dim=0)[0][i] + (self.mst_bias['upper'] / 255.)
                 base_mask &= (mono_albedo >= min_value) & (mono_albedo <= max_value)
             
             base_basis = base_mask.unsqueeze(dim=0).expand_as(body_albedo) * (tone - self.body_map['mean']).view(-1, 1, 1)
@@ -136,7 +153,7 @@ class NakedHuman:
         
         return body_albedos
             
-    def make_head(self, albedo: torch.Tensor):
+    def make_head(self, albedo: torch.Tensor, skin_values: torch.Tensor = None):
         """_summary_
 
         Args:
@@ -145,10 +162,11 @@ class NakedHuman:
         resize = transforms.Compose([transforms.Resize((512, 512))])
         albedo = resize(albedo)
 
-        skin_albedo = albedo * self.head_map['skin_mask'].to(self.device)
+        # skin_albedo = albedo * self.head_map['skin_mask'].to(self.device)
+        skin_albedo = albedo
         self.save_images("skin-image.jpg", skin_albedo)
         tone_indices, tone_diff = self.detect_skin(skin_albedo=skin_albedo)
-        fetched = self.fetch_skin(albedo=albedo, indices=tone_indices, tone_diffs=tone_diff)
+        fetched = self.fetch_skin(albedo=albedo, indices=tone_indices, tone_diffs=tone_diff, skin_values=skin_values)
         return fetched, tone_indices
     
     def smooth_contour(self, single_image: torch.Tensor):
@@ -176,23 +194,37 @@ class NakedHuman:
             
         return blurred + remain
             
-    def fetch_skin(self, albedo: torch.Tensor, indices: torch.Tensor, tone_diffs: torch.Tensor) -> torch.Tensor:
+    def fetch_skin(self, albedo: torch.Tensor, indices: torch.Tensor, tone_diffs: torch.Tensor, skin_values: torch.Tensor = None) -> torch.Tensor:
         for key in self.head_map:
             self.head_map[key] = self.head_map[key].to(albedo.device)
         mst = torch.tensor(self.mst, dtype=tone_diffs.dtype, device=albedo.device) / 255.
         fetched_result = []
-        for skin, index, diff in zip(albedo, indices, tone_diffs):
+        if skin_values is not None:
+            skin_values = skin_values.to(albedo.device)
+            pack = zip(albedo, skin_values, tone_diffs)
+        else:
+            pack = zip(albedo, mst[indices], tone_diffs)
+        for skin, base_diff, diff in pack:
             face_mask = torch.ones((albedo.shape[2], albedo.shape[3]), device=mst.device, dtype=torch.bool)
             base_mask = torch.ones((self.head_map['default_albedo'].shape[1], self.head_map['default_albedo'].shape[2]), device=mst.device, dtype=torch.bool)
             for i in range(3):
                 mono_albedo = skin[i]
                 mono_base = self.head_map['default_albedo'][i]
-                min_value, max_value = mst.min(dim=0)[0][i] - (10 / 255.), mst.max(dim=0)[0][i] + (60 / 255.)
+                min_value, max_value = mst.min(dim=0)[0][i] - (self.mst_bias['lower'] / 255.), mst.max(dim=0)[0][i] + (self.mst_bias['upper'] / 255.)
                 face_mask &= (mono_albedo >= min_value) & (mono_albedo <= max_value)
                 base_mask &= (mono_base >= min_value) & (mono_base <= max_value)
             
+            basis_median = torch.zeros(3).to(albedo.device)
+            for i in range(3):
+                mono_albedo = skin[i]
+                selected_values = mono_base[base_mask]
+                if selected_values.numel() > 0:
+                    basis_median[i] = selected_values.median()
+                else:
+                    basis_median[i] = float('nan')  # 값이 없을 경우 NaN
+                    
             face_basis = face_mask.unsqueeze(dim=0).expand_as(skin) * diff.view(-1, 1, 1)
-            base_basis = base_mask.unsqueeze(dim=0).expand_as(skin) * (mst[index] - self.head_map['mean']).view(-1, 1, 1)
+            base_basis = base_mask.unsqueeze(dim=0).expand_as(skin) * (base_diff - basis_median).view(-1, 1, 1)
             fetched_skin = torch.clamp(skin + face_basis, 0.0, 1.0)
             fetched_base = torch.clamp(self.head_map['default_albedo'] + base_basis, 0.0, 1.0)
             # Merge image
@@ -224,7 +256,7 @@ class NakedHuman:
             mask = torch.ones((skin_albedo.shape[2], skin_albedo.shape[3]), device=skin_albedo.device, dtype=torch.bool)
             for i in range(3):
                 mono_albedo = skin[i]
-                min_value, max_value = self.mst.min(axis=0)[i] - 10, self.mst.max(axis=0)[i] + 60
+                min_value, max_value = self.mst.min(axis=0)[i] - self.mst_bias['lower'], self.mst.max(axis=0)[i] + self.mst_bias['upper']
                 min_value, max_value = min_value / 255., max_value / 255.
                 mask &= (mono_albedo >= min_value) & (mono_albedo <= max_value)
             
@@ -232,7 +264,7 @@ class NakedHuman:
                 mono_albedo = skin[i]
                 selected_values = mono_albedo[mask]
                 if selected_values.numel() > 0:
-                    mean_values[i] = selected_values.mean()
+                    mean_values[i] = selected_values.median()
                 else:
                     mean_values[i] = float('nan')  # 값이 없을 경우 NaN
             # calculated mean value from skin albedo, map real skin to MSTScale
@@ -248,40 +280,44 @@ class NakedHuman:
         for i, image in enumerate(images):
             filename = "%d-th %s" % (i, fname)
             utils.save_image(image, filename)
+
+
+def make_head_map():
+    import torchvision.io as io
+    from torchvision.transforms import ToTensor
+    import cv2
     
-# if __name__ == "__main__":
-#     import torchvision.io as io
-#     from torchvision.transforms import ToTensor
-#     import cv2
+    model_root = "creadto-model"
+    albedo_path = r"D:\Creadto\CreadtoLibrary\creadto-model\textures\MSTScale\Samples\default_head (1).png"
+    skin_mask_path = osp.join(model_root, "flame", "mask_images", "skin.jpg")
+    observed_mask_path = osp.join(model_root, "flame", "mask_images", "observed_mask.jpg")
+    contour_path = osp.join(model_root, "flame", "mask_images", "face_contour.jpg")
+    default_albedo = cv2.imread(albedo_path)
+    default_albedo = cv2.resize(default_albedo, (512, 512))
+    default_albedo = cv2.cvtColor(default_albedo, cv2.COLOR_BGR2RGB)
+    skin_mask = cv2.imread(skin_mask_path, cv2.IMREAD_GRAYSCALE)
+    face_mask = cv2.imread(observed_mask_path, cv2.IMREAD_GRAYSCALE)
+    contour_mask = cv2.imread(contour_path, cv2.IMREAD_GRAYSCALE)
+    _, skin_mask = cv2.threshold(skin_mask, 128, 255, cv2.THRESH_BINARY)
+    _, face_mask = cv2.threshold(face_mask, 128, 255, cv2.THRESH_BINARY)
+    _, contour_mask = cv2.threshold(contour_mask, 128, 255, cv2.THRESH_BINARY)
+    default_skin_image = cv2.bitwise_and(default_albedo, default_albedo, mask=skin_mask)
+    trans = ToTensor()
+    skin_mask = trans(skin_mask)
+    face_mask = trans(face_mask)
+    contour_mask = trans(contour_mask)
+    default_albedo = trans(default_albedo)
+    print(torch.unique(skin_mask[0]))
+    print(torch.unique(face_mask[0]))
+    print(torch.unique(contour_mask[0]))
+    head_texture_kit = {
+        'default_albedo': default_albedo,
+        'mean': torch.tensor([0.9519, 0.9268, 0.8955], dtype=torch.float32),
+        'skin_mask': skin_mask.expand_as(default_albedo),
+        'face_mask': face_mask.expand_as(default_albedo),
+        'contour_mask': contour_mask.expand_as(default_albedo),
+    }
+    torch.save(head_texture_kit, "head_texture_map.pt")
     
-#     model_root = "creadto-model"
-#     albedo_path = r"D:\Creadto\CreadtoLibrary\creadto-model\textures\MSTScale\Samples\default_head (1).png"
-#     skin_mask_path = osp.join(model_root, "flame", "mask_images", "skin.jpg")
-#     observed_mask_path = osp.join(model_root, "flame", "mask_images", "observed_mask.jpg")
-#     contour_path = osp.join(model_root, "flame", "mask_images", "face_contour.jpg")
-#     default_albedo = cv2.imread(albedo_path)
-#     default_albedo = cv2.resize(default_albedo, (512, 512))
-#     default_albedo = cv2.cvtColor(default_albedo, cv2.COLOR_BGR2RGB)
-#     skin_mask = cv2.imread(skin_mask_path, cv2.IMREAD_GRAYSCALE)
-#     face_mask = cv2.imread(observed_mask_path, cv2.IMREAD_GRAYSCALE)
-#     contour_mask = cv2.imread(contour_path, cv2.IMREAD_GRAYSCALE)
-#     _, skin_mask = cv2.threshold(skin_mask, 128, 255, cv2.THRESH_BINARY)
-#     _, face_mask = cv2.threshold(face_mask, 128, 255, cv2.THRESH_BINARY)
-#     _, contour_mask = cv2.threshold(contour_mask, 128, 255, cv2.THRESH_BINARY)
-#     default_skin_image = cv2.bitwise_and(default_albedo, default_albedo, mask=skin_mask)
-#     trans = ToTensor()
-#     skin_mask = trans(skin_mask)
-#     face_mask = trans(face_mask)
-#     contour_mask = trans(contour_mask)
-#     default_albedo = trans(default_albedo)
-#     print(torch.unique(skin_mask[0]))
-#     print(torch.unique(face_mask[0]))
-#     print(torch.unique(contour_mask[0]))
-#     head_texture_kit = {
-#         'default_albedo': default_albedo,
-#         'mean': torch.tensor([0.9519, 0.9268, 0.8955], dtype=torch.float32),
-#         'skin_mask': skin_mask.expand_as(default_albedo),
-#         'face_mask': face_mask.expand_as(default_albedo),
-#         'contour_mask': contour_mask.expand_as(default_albedo),
-#     }
-#     torch.save(head_texture_kit, "head_texture_map.pt")
+if __name__ == "__main__":
+    make_head_map()

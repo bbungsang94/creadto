@@ -45,10 +45,10 @@ def save_texture_models(root, op_dict, uvcoord, uvface):
 def procedure(root):
     # must be pair a set of vertex and faces and an texture image
     models, uvcoords, uvfaces = load_plane_models(osp.join(root, "plane_model"))
-    full_texture, names = image_to_texture(osp.join(root, "input_images"))
+    result_dict, names = image_to_texture(osp.join(root, "input_images"))
     for i, name in enumerate(names):
         name = name.split('.')[0]
         v, f = models[name]
-        models[name] = (v, f, full_texture[i])
+        models[name] = (v, f, result_dict['full_texture'][i])
         
     save_texture_models(osp.join(root, "texture-model"), models, uvcoords, uvfaces)
