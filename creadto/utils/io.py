@@ -1,8 +1,10 @@
 import copy
 import json
 import os
+import os.path as osp
 import shutil
 from datetime import datetime
+import facer
 from pathlib import Path
 from typing import Dict, Any
 from PIL.Image import Image
@@ -28,6 +30,27 @@ def read_json(full_path=''):
         file = json.load(f)
     return file
 
+def load_image(path, mono=False, integer=True, device="cpu") -> torch.Tensor:
+    image = facer.hwc2bchw(facer.read_hwc(path)).to(device=device)
+    if mono:
+        image = image[:, 0]
+    if integer is False:
+        image = image.type(torch.FloatTensor) / 255.
+    return image.to(device)
+
+def load_images(root: str, device="cpu") -> torch.Tensor:
+    extension = ['jpg', 'jpeg', 'png', 'bmp']
+    files = os.listdir(root)
+    files = [x for x in files if x.split('.')[-1].lower() in extension]
+    images = []
+    if len(files) > 0:
+        for file in files:
+            image = load_image(osp.join(root, file), device=device)
+            images.append(image)
+        return {'images': torch.concat(images),
+                'names': files}
+    else:
+        return None
 
 def load_mesh(mesh_path):
     """ Ref: https://github.com/facebookresearch/pytorch3d/blob/25c065e9dafa90163e7cec873dbb324a637c68b7/pytorch3d/io/obj_io.py
@@ -102,7 +125,7 @@ def save_mesh(obj_name,
         texture: shape = (uv_size, uv_size, 3)
         uvcoords: shape = (nver, 2) max value<=1
     '''
-    if os.path.splitext(obj_name)[-1] != '.obj':
+    if osp.splitext(obj_name)[-1] != '.obj':
         obj_name = obj_name + '.obj'
     mtl_name = obj_name.replace('.obj', '.mtl')
     texture_name = obj_name.replace('.obj', '.png')
@@ -119,11 +142,11 @@ def save_mesh(obj_name,
     # write obj
     with open(obj_name, 'w') as f:
         # first line: write mtlib(material library)
-        # f.write('# %s\n' % os.path.basename(obj_name))
+        # f.write('# %s\n' % osp.basename(obj_name))
         # f.write('#\n')
         # f.write('\n')
         if texture is not None:
-            f.write('mtllib %s\n\n' % os.path.basename(mtl_name))
+            f.write('mtllib %s\n\n' % osp.basename(mtl_name))
 
         # write vertices
         if colors is None:
@@ -156,11 +179,11 @@ def save_mesh(obj_name,
             # write mtl
             with open(mtl_name, 'w') as f:
                 f.write('newmtl %s\n' % material_name)
-                s = 'map_Kd {}\n'.format(os.path.basename(texture_name)) # map to image
+                s = 'map_Kd {}\n'.format(osp.basename(texture_name)) # map to image
                 f.write(s)
 
                 if normal_map is not None:
-                    name, _ = os.path.splitext(obj_name)
+                    name, _ = osp.splitext(obj_name)
                     normal_name = f'{name}_normals.png'
                     f.write(f'disp {normal_name}')
                     # out_normal_map = normal_map / (np.linalg.norm(
@@ -171,7 +194,7 @@ def save_mesh(obj_name,
 
 
 def get_loader(root='./'):
-    parameter = read_json(os.path.join(root, 'default.json'))
+    parameter = read_json(osp.join(root, 'default.json'))
     module_loader = ModuleLoader(root=root, params=parameter)
     return module_loader
 
@@ -198,28 +221,28 @@ def replace_values(source, target):
 
 
 def make_dir(path):
-    if os.path.exists(path) is False:
+    if osp.exists(path) is False:
         dir_q = []
         sub_path = path
         while True:
-            directory, folder = os.path.split(sub_path)
+            directory, folder = osp.split(sub_path)
             sub_path = directory
             dir_q.append(folder)
-            if os.path.exists(directory):
+            if osp.exists(directory):
                 for target in reversed(dir_q):
-                    sub_path = os.path.join(sub_path, target)
-                    os.mkdir(os.path.join(sub_path))
+                    sub_path = osp.join(sub_path, target)
+                    os.mkdir(osp.join(sub_path))
                 break
 
 
 def clean_folder(path):
-    if not os.path.exists(path):
+    if not osp.exists(path):
         return
     folders = os.listdir(path)
     for folder in folders:
-        files = os.listdir(os.path.join(path, folder))
+        files = os.listdir(osp.join(path, folder))
         if len(files) <= 1:
-            shutil.rmtree(os.path.join(path, folder))
+            shutil.rmtree(osp.join(path, folder))
 
 
 class ModuleLoader:
