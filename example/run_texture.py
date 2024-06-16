@@ -43,10 +43,16 @@ def save_texture_models(root, op_dict, uvcoord, uvface):
                   texture=to_pil_image(texture), uvcoords=uvcoord, uvfaces=uvface)
         
 def procedure(root):
+    import torchvision
     # must be pair a set of vertex and faces and an texture image
     models, uvcoords, uvfaces = load_plane_models(osp.join(root, "plane_model"))
     result_dict, names = image_to_texture(osp.join(root, "input_images"))
     
+    if osp.exists(osp.join(root, "head-texture")) is False:
+        os.mkdir(osp.join(root, "head-texture"))
+    for i, head_albedo in enumerate(result_dict['head_texture']):
+        pil_image = torchvision.transforms.functional.to_pil_image(head_albedo.cpu().detach())
+        pil_image.save(osp.join(root, "head-texture", "%d-th head_texture.png" % i))
     for i, name in enumerate(names):
         name = name.split('.')[0]
         v, f = models[name]
