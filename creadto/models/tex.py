@@ -1,5 +1,5 @@
 import copy
-from typing import List, Tuple
+from typing import Dict, List, Tuple
 from PIL.Image import Image
 import torch
 import numpy as np
@@ -7,6 +7,169 @@ import os.path as osp
 from torchvision import transforms
 
 
+class PaintHuman:
+    def __init__(self, device="cuda:0"):
+        import facer
+        from creadto.utils.io import load_image
+        from creadto.models.recon import DetailFaceModel
+        model_root = "creadto-model"
+        self.flaep = DetailFaceModel()
+        self.face_detector = facer.face_detector('retinaface/mobilenet', device=device,
+                                                 model_path=osp.join(model_root, "mobilenet0.25_Final.pth"))
+        self.face_parser = facer.face_parser('farl/celebm/448', device=device,
+                                             model_path=osp.join(model_root, "face_parsing.farl.celebm.main_ema_181500_jit.pt")) # optional "farl/lapa/448"
+        self.bridge = np.load(osp.join(model_root, "flame", "flame2smplx_tex_1024.npy"), allow_pickle=True, encoding = 'latin1').item()
+        
+        mask_root = osp.join(model_root, "textures", "MSTScale", "Samples")
+        self.body_albedo = load_image(osp.join(mask_root, "mono_body-masks.png"))[0]
+        self.body_albedo = self.body_albedo.type(torch.FloatTensor).to(device)
+        self.masks = {
+            'iris': load_image(osp.join(mask_root, "weighted_green_mask.png"), mono=True, integer=False),
+            'lips': load_image(osp.join(mask_root, "weighted_red_mask.png"), mono=True, integer=False),
+            'eyelid': load_image(osp.join(mask_root, "eyelid.jpg"), mono=True, integer=False)
+            
+        }
+    def __call__(self, images: List[Image]):
+        # extract head images
+        head_images, process = self.flaep.encode_pil(images)
+        # face parsing
+        head_images = head_images * 255.
+        eye_dict = self.get_parts_colour(head_images, ['left_eye', 'right_eye'])
+        lip_dict = self.get_parts_colour(head_images, ['lower_lip', 'upper_lip'], max_thrd=255)
+        eyebrow_dict = self.get_parts_colour(head_images, ['left_eyebrow', 'right_eyebrow'], max_thrd=255)
+        skin_dict = self.get_parts_colour(head_images, ['skin', 'nose'])
+        # paint skin
+        colored_albedos = self.paint_skin(skin_dict['mean_values'])
+        # paint iris
+        colored_albedos = self.paint_with_mask(colored_albedos, self.masks['iris'], eye_dict['mean_values'])
+        # paint lips
+        colored_albedos = self.paint_with_mask(colored_albedos, self.masks['lips'], lip_dict['mean_values'])
+        # displace eyelid
+        head_albedos = self.decouple_head_albedo(colored_albedos)
+        result = self.flaep.decode(head_images / 255., external_img=head_albedos / 255.)
+        pack = zip(head_albedos, result["uv_texture_gt"])
+        for i, tup in enumerate(pack):
+            head_albedo, face_albedo = tup
+            head_albedos[i] = copy.deepcopy(head_albedo + self.masks['eyelid'] * face_albedo)
+        full_albedos = self.couple_body_texture(head_albedos, colored_albedos)
+        # fetch eyebrow
+        return full_albedos
+
+    def get_parts_colour(self, images: torch.Tensor, parts: List[str], min_thrd = 5, max_thrd = 170) -> Dict[str, object]:
+        """From head image (b, 3, 224, 224), extract eye(iris) colour without sclera.
+
+        Args:
+            images (torch.Tensor): (b, 3, 224, 224) head image [0, 255]
+            min_thrd (int, optional): for mask of sclera. Defaults to 0.
+            max_thrd (int, optional): _for mask of sclera. Defaults to 170.
+
+        Returns:
+            Dict[str, object]: Dict of operation results such as input images, processed images, colour values, and file names
+        """
+        
+        device = self.body_albedo.device
+        # define categories of face parser
+        categories = {"background": 0, "neck": 1, "skin": 2, "cloth": 3,
+                    "left_ear": 4, "right_ear": 5, "left_eyebrow": 6, "right_eyebrow": 7,
+                    "left_eye": 8, "right_eye": 9, "nose": 10, "mouth": 11,
+                    "lower_lip": 12, "upper_lip": 13, "hair": 14, "sunglasses": 15,
+                    "hat": 16, "earring": 17, "necklace": 18}
+        
+        # Need refactoring part!, we can get processed arguments
+        with torch.inference_mode():
+            faces = self.face_detector(images)
+            faces = self.face_parser(images, faces)
+        seg_logits = faces['seg']['logits']
+        seg_probs = seg_logits.softmax(dim=1)
+        
+        masks = torch.zeros((seg_probs[:, 0].shape), device=seg_probs.device, dtype=seg_probs.dtype)
+        for part in parts:
+            masks += seg_probs[:, categories[part]]
+        mean_values = []
+        filtered_images = []
+        for image, mask in zip(images, masks):
+            vis = image * mask.expand_as(image)
+            
+            filter = torch.ones((image.shape[1], image.shape[2]), device=device, dtype=torch.bool)
+            for i in range(3):
+                mono_albedo = vis[i]
+                min_value, max_value = min_thrd, max_thrd
+                filter &= (mono_albedo >= min_value) & (mono_albedo <= max_value)
+            
+            filtered = vis * (mask.expand_as(vis).type(mask.dtype))
+            filtered_images.append(filtered)
+            mean_value = torch.zeros(3)        
+            for i in range(3):
+                mono_albedo = vis[i]
+                selected_values = mono_albedo[filter]
+                if selected_values.numel() > 0:
+                    mean_value[i] = selected_values.median()
+                else:
+                    mean_value[i] = float('nan')  # 값이 없을 경우 NaN
+            mean_values.append(mean_value)
+
+        return {
+            'segmented_images': filtered_images,
+            'mean_values': torch.stack(mean_values)
+        }
+    
+    def paint_skin(self, rgbs):
+        converted = []
+        rgbs = rgbs.to(self.body_albedo.device)
+        for rgb in rgbs:
+            albedo = copy.deepcopy(self.body_albedo)
+            diff = rgb - torch.tensor([205., 205., 205.]).to(rgb.device)
+            painted = torch.clamp(albedo + diff.view(-1, 1, 1), 0, 255)
+            converted.append(painted)
+        return torch.stack(converted)
+    
+    def paint_with_mask(self, images: torch.Tensor, masks: torch.Tensor, colors: torch.Tensor):
+        """_summary_
+
+        Args:
+            images (torch.Tensor): (b, c, w, h)
+            masks (torch.Tensor): (b, w, h)
+            color (torch.Tensor): (b, 3)
+        """
+        painted_images = []
+        colors = colors.to(images.device)
+        for image, mask, color in zip(images, masks, colors):
+            partial = color.view(-1, 1, 1) * mask.expand_as(image)
+            painted = image * (1-mask.expand_as(image)) + partial
+            painted_images.append(painted)
+        return torch.stack(painted_images)
+    
+    def decouple_head_albedo(self, albedo):
+        device = albedo.device
+        dtype = albedo.dtype
+
+        x_coords = torch.tensor(self.bridge['x_coords'], dtype=torch.int32, device=device, requires_grad=False)
+        y_coords = torch.tensor(self.bridge['y_coords'], dtype=torch.int32, device=device, requires_grad=False)
+        target_pixel_ids = torch.tensor(self.bridge['target_pixel_ids'], dtype=torch.int32, device=device, requires_grad=False)
+
+        return copy.deepcopy(albedo[:, :, y_coords[target_pixel_ids], x_coords[target_pixel_ids]])
+    
+    def couple_body_texture(self, head_albedo: torch.Tensor, body_albedo: torch.Tensor):
+        """_summary_
+        Args:
+            head_albedo (torch.Tensor): shape (c, 512, 512)
+            body_albedo (torch.Tensor): shape (c, 1024, 1024)
+        """
+        device = head_albedo.device
+        dtype = head_albedo.dtype
+
+        x_coords = torch.tensor(self.bridge['x_coords'], dtype=torch.int32, device=device, requires_grad=False)
+        y_coords = torch.tensor(self.bridge['y_coords'], dtype=torch.int32, device=device, requires_grad=False)
+        target_pixel_ids = torch.tensor(self.bridge['target_pixel_ids'], dtype=torch.int32, device=device, requires_grad=False)
+        source_uv_points = torch.tensor(self.bridge['source_uv_points'], dtype=torch.float32, device=device, requires_grad=False)
+        source_tex_coords = torch.zeros((source_uv_points.shape[0], source_uv_points.shape[1]), dtype=torch.int32, device=device, requires_grad=False)
+        source_tex_coords[:, 0] = torch.clamp(head_albedo.shape[1]*(1.0-source_uv_points[:,1]), 0.0, head_albedo.shape[1]).type(torch.IntTensor)
+        source_tex_coords[:, 1] = torch.clamp(head_albedo.shape[2]*(source_uv_points[:,0]), 0.0, head_albedo.shape[2]).type(torch.IntTensor)
+
+        body_albedo[:, :, y_coords[target_pixel_ids], x_coords[target_pixel_ids]] = head_albedo[:, :, source_tex_coords[:,0], source_tex_coords[:,1]]
+        albedo = copy.deepcopy(body_albedo)
+        return albedo
+    
 class NakedHuman:
     def __init__(self, device="cuda:0"):
         import facer

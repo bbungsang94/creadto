@@ -1,6 +1,7 @@
 import copy
 import os
 import os.path as osp
+from typing import Dict, List
 import cv2
 import torch
 import numpy as np
@@ -127,9 +128,9 @@ def make_skin_mask(root=r"creadto-model\flame\mask_images", departs=["forehead",
         skin_mask = cv2.subtract(skin_mask, demask)
     cv2.imwrite("skin.jpg", skin_mask)
 
-def modify_skin_color(mst_root=r"creadto-model\textures\MonkSkinToneScale\MST Swatches",
+def modify_skin_color(mst_root=r"creadto-model\textures\MSTScale\MST Swatches",
                       target_image=r"creadto-model\flame\mask_images\default_image.png",
-                      skin_mask_path=r"creadto-model\flame\mask_images\skin.jpg"):
+                      skin_mask_path=r"creadto-model\flame\mask_images\mono-body-mask.png"):
     #Load MST
     monk_skin_tone_scale = []
     skin_files = os.listdir(mst_root)
@@ -144,13 +145,15 @@ def modify_skin_color(mst_root=r"creadto-model\textures\MonkSkinToneScale\MST Sw
     _, skin_mask = cv2.threshold(skin_mask, 128, 255, cv2.THRESH_BINARY)
     skin_image = cv2.bitwise_and(origin_image, origin_image, mask=skin_mask)
     
+    cv2.imwrite("skin_image.jpg", skin_image)
     # Get skin data
     now_skin = np.zeros(3)
     for i in range(3):
         panel = skin_image[:, :, i]
         min_value, max_value = monk_skin_tone_scale.min(axis=0)[i], monk_skin_tone_scale.max(axis=0)[i]
+        min_value, max_value = 20, 255
         subset = panel[(panel >= min_value) & (panel <= max_value)]
-        now_skin[i] = subset.mean()
+        now_skin[i] = np.median(subset)
     
     # Find skin tone
     error = abs(monk_skin_tone_scale - now_skin)
@@ -276,7 +279,7 @@ def match_skin(face_path=r"./output/deca_output.png",
         cv2.imwrite(prefix + "final_output.png", final_image)
     return cv2.cvtColor(final_image, cv2.COLOR_BGR2RGB)
 
-def run_full_cycle(root):
+def run_displace_cycle(root):
     import torch
     from PIL import Image
     from torchvision.transforms import ToTensor, ToPILImage
@@ -341,9 +344,9 @@ def resize_to(root=r"D:\dump\head_model_test\input_images\imgs", target=(512, 51
         image = cv2.resize(image, target)
         cv2.imwrite(osp.join(root, "%d-%s" %(target[0], file)), image)
 
-def flat_head_skin(root=r"D:\dump\sample\head_images",
-                   mst_root=r"D:\Creadto\CreadtoLibrary\creadto-model\textures\MSTScale",
-                   iteration=1):
+def enhance_face_skin(images,
+                      mst_root=r"D:\Creadto\CreadtoLibrary\creadto-model\textures\MSTScale",
+                      iteration=1):
     import facer
     
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -358,12 +361,6 @@ def flat_head_skin(root=r"D:\dump\sample\head_images",
                   "lower_lip": 12, "upper_lip": 13, "hair": 14, "sunglasses": 15,
                   "hat": 16, "earring": 17, "necklace": 18}
     
-    files = os.listdir(root)
-    images = []
-    for file in files:
-        image = facer.hwc2bchw(facer.read_hwc(osp.join(root, file))).to(device=device)
-        images.append(image)
-    images = torch.concat(images).to(device)
     face_detector = facer.face_detector('retinaface/mobilenet', device=device, model_path=r"./creadto-model/mobilenet0.25_Final.pth")
     face_parser = facer.face_parser('farl/celebm/448', model_path=r"./creadto-model/face_parsing.farl.celebm.main_ema_181500_jit.pt", device=device) # optional "farl/lapa/448"
     with torch.inference_mode():
@@ -377,6 +374,7 @@ def flat_head_skin(root=r"D:\dump\sample\head_images",
     facer.show_bchw(facer.draw_bchw(images, faces))
 
     face_masks = seg_probs[:, categories['skin']] + seg_probs[:, categories['nose']]
+    mean_values = []
     for image, face_mask in zip(images, face_masks):
         vis = image * face_mask.expand_as(image)
         facer.show_bchw(vis[None, :, :])
@@ -392,19 +390,19 @@ def flat_head_skin(root=r"D:\dump\sample\head_images",
         filtered = vis * (mask.expand_as(vis).type(face_mask.dtype))
         facer.show_bchw(filtered[None, :, :])
         
-        mean_values = torch.zeros(3)        
+        mean_value = torch.zeros(3)        
         for i in range(3):
             mono_albedo = vis[i]
             selected_values = mono_albedo[mask]
             if selected_values.numel() > 0:
-                mean_values[i] = selected_values.median()
+                mean_value[i] = selected_values.median()
             else:
-                mean_values[i] = float('nan')  # 값이 없을 경우 NaN
-        diff = torch.tensor(mst, dtype=mean_values.dtype, device=mean_values.device) - mean_values 
+                mean_value[i] = float('nan')  # 값이 없을 경우 NaN
+        diff = torch.tensor(mst, dtype=mean_value.dtype, device=mean_value.device) - mean_value 
         print(diff)
         tone_index = torch.argmin(abs(diff).sum(dim=1))
         # mst_value = mst[tone_index]
-        mst_value = mean_values
+        mst_value = mean_value
         print(mst_value)
         flat_skin = torch.zeros_like(vis)
         mean_skin = torch.zeros_like(vis)
@@ -419,26 +417,257 @@ def flat_head_skin(root=r"D:\dump\sample\head_images",
         face_filter = face_mask.expand_as(image)
         enhanced = image * (1 - face_filter) + mean_skin * face_filter
         facer.show_bchw(enhanced[None, :, :, :])
+        mean_values.append(mean_value)
+    return torch.stack(mean_values).to(images.device)
 
-def dummy():
+def merge_mono_albedos():
     import torchvision
     import torchvision.io as io
     import torchvision.utils as util
     root = r"D:\Creadto\CreadtoLibrary\creadto-model\textures\MSTScale\Samples"
-    body = "mono_body.png"
-    head = "mono_head.png"
+    body = "mono_body-adult.png"
+    head = "mono_head2.png"
     resizer512 = torchvision.transforms.Resize((512, 512))
     resizer1024 = torchvision.transforms.Resize((1024, 1024))
     body_albedo = io.read_image(osp.join(root, body))
-    body_albedo = resizer1024(body_albedo)
+    #body_albedo = resizer1024(body_albedo)
     head_albedo = io.read_image(osp.join(root, head))
-    head_albedo = resizer512(head_albedo)
+    #head_albedo = resizer512(head_albedo)
     
     albedo = map_body_texture(head_albedo[:3], body_albedo[:3])
     pil_image = torchvision.transforms.functional.to_pil_image(albedo)
     pil_image.save("full_albedo.png")
-    pass
+
+def make_weighted_masks(mono_body_albedo_path=r"D:\Creadto\CreadtoLibrary\creadto-model\textures\MSTScale\Samples\mono_body-masks.png"):
+    body_albedo = cv2.imread(mono_body_albedo_path)
+    body_albedo = body_albedo.astype(np.float32)
+    green_channel = copy.deepcopy(body_albedo[:, :, 1])
+    green_channel = green_channel - ((body_albedo[:, :, 0] + body_albedo[:, :, 2]) / 2.)
+    cv2.imwrite("weighted_green_mask.png", green_channel)
     
+    red_channel = copy.deepcopy(body_albedo[:, :, -1])
+    red_channel = red_channel - ((body_albedo[:, :, 0] + body_albedo[:, :, 1]) / 2.)
+    cv2.imwrite("weighted_red_mask.png", red_channel)
+    pass
+
+def extract_sclera(head_image_paths=r"D:\dump\sample\head_images"):
+    import facer
+    
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    # define categories of face parser
+    categories = {"background": 0, "neck": 1, "skin": 2, "cloth": 3,
+                  "left_ear": 4, "right_ear": 5, "left_eyebrow": 6, "right_eyebrow": 7,
+                  "left_eye": 8, "right_eye": 9, "nose": 10, "mouth": 11,
+                  "lower_lip": 12, "upper_lip": 13, "hair": 14, "sunglasses": 15,
+                  "hat": 16, "earring": 17, "necklace": 18}
+    
+    files = os.listdir(head_image_paths)
+    images = []
+    for file in files:
+        image = facer.hwc2bchw(facer.read_hwc(osp.join(head_image_paths, file))).to(device=device)
+        images.append(image)
+    images = torch.concat(images).to(device)
+    face_detector = facer.face_detector('retinaface/mobilenet', device=device, model_path=r"./creadto-model/mobilenet0.25_Final.pth")
+    face_parser = facer.face_parser('farl/celebm/448', model_path=r"./creadto-model/face_parsing.farl.celebm.main_ema_181500_jit.pt", device=device) # optional "farl/lapa/448"
+    with torch.inference_mode():
+        faces = face_detector(images)
+        faces = face_parser(images, faces)
+    seg_logits = faces['seg']['logits']
+    seg_probs = seg_logits.softmax(dim=1)
+    vis_seg_probs = seg_probs.argmax(dim=1).float()/len(categories)*255
+    vis_img = vis_seg_probs.sum(0, keepdim=True)
+    facer.show_bhw(vis_img)
+    facer.show_bchw(facer.draw_bchw(images, faces))
+
+    eye_masks = seg_probs[:, categories['left_eye']] + seg_probs[:, categories['right_eye']]
+    for image, face_mask in zip(images, eye_masks):
+        vis = image * face_mask.expand_as(image)
+        facer.show_bchw(vis[None, :, :])
+        
+        mask = torch.ones((image.shape[1], image.shape[2]), device=device, dtype=torch.bool)
+        for i in range(3):
+            mono_albedo = vis[i]
+            min_value, max_value = 0, 170
+            mask &= (mono_albedo >= min_value) & (mono_albedo <= max_value)
+            temp = mask.expand_as(vis).type(face_mask.dtype)
+            # facer.show_bchw(temp[None, :, :] * 255)
+        
+        filtered = vis * (mask.expand_as(vis).type(face_mask.dtype))
+        facer.show_bchw(filtered[None, :, :])
+        
+        mean_values = torch.zeros(3)        
+        for i in range(3):
+            mono_albedo = vis[i]
+            selected_values = mono_albedo[mask]
+            if selected_values.numel() > 0:
+                mean_values[i] = selected_values.median()
+            else:
+                mean_values[i] = float('nan')  # 값이 없을 경우 NaN
+        # mst_value = mst[tone_index]
+        mst_value = mean_values
+        print(mst_value)
+        flat_skin = torch.zeros_like(vis)
+        mean_skin = torch.zeros_like(vis)
+        for i in range(3):
+            flat_skin[i, :, :] = face_mask * mst_value[i]
+        facer.show_bchw(flat_skin[None, :, :, :])
+        mean_skin = (vis + flat_skin) / 2.0
+        facer.show_bchw(mean_skin[None, :, :, :])
+        
+        face_filter = face_mask.expand_as(image)
+        enhanced = image * (1 - face_filter) + mean_skin * face_filter
+        facer.show_bchw(enhanced[None, :, :, :])
+
+# region: be included methods of NakedHuman class
+def get_parts_colour(images: torch.Tensor, parts: List[str], min_thrd = 5, max_thrd = 170) -> Dict[str, object]:
+    """From head image (b, 3, 224, 224), extract eye(iris) colour without sclera.
+
+    Args:
+        images (torch.Tensor): (b, 3, 224, 224) head image [0, 255]
+        min_thrd (int, optional): for mask of sclera. Defaults to 0.
+        max_thrd (int, optional): _for mask of sclera. Defaults to 170.
+
+    Returns:
+        Dict[str, object]: Dict of operation results such as input images, processed images, colour values, and file names
+    """
+    import facer
+    
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    # define categories of face parser
+    categories = {"background": 0, "neck": 1, "skin": 2, "cloth": 3,
+                  "left_ear": 4, "right_ear": 5, "left_eyebrow": 6, "right_eyebrow": 7,
+                  "left_eye": 8, "right_eye": 9, "nose": 10, "mouth": 11,
+                  "lower_lip": 12, "upper_lip": 13, "hair": 14, "sunglasses": 15,
+                  "hat": 16, "earring": 17, "necklace": 18}
+    
+    face_detector = facer.face_detector('retinaface/mobilenet', device=device, model_path=r"./creadto-model/mobilenet0.25_Final.pth")
+    face_parser = facer.face_parser('farl/celebm/448', model_path=r"./creadto-model/face_parsing.farl.celebm.main_ema_181500_jit.pt", device=device) # optional "farl/lapa/448"
+    names = images['names']
+    images = images['images']
+    with torch.inference_mode():
+        faces = face_detector(images)
+        faces = face_parser(images, faces)
+    seg_logits = faces['seg']['logits']
+    seg_probs = seg_logits.softmax(dim=1)
+    vis_seg_probs = seg_probs.argmax(dim=1).float()/len(categories)*255
+    vis_img = vis_seg_probs.sum(0, keepdim=True)
+    facer.show_bhw(vis_img)
+    facer.show_bchw(facer.draw_bchw(images, faces))
+
+    masks = torch.zeros((seg_probs[:, 0].shape), device=seg_probs.device, dtype=seg_probs.dtype)
+    for part in parts:
+        masks += seg_probs[:, categories[part]]
+    mean_values = []
+    for image, face_mask in zip(images, masks):
+        vis = image * face_mask.expand_as(image)
+        # facer.show_bchw(vis[None, :, :])
+        
+        mask = torch.ones((image.shape[1], image.shape[2]), device=device, dtype=torch.bool)
+        for i in range(3):
+            mono_albedo = vis[i]
+            min_value, max_value = min_thrd, max_thrd
+            mask &= (mono_albedo >= min_value) & (mono_albedo <= max_value)
+        
+        filtered = vis * (mask.expand_as(vis).type(face_mask.dtype))
+        facer.show_bchw(filtered[None, :, :])
+        
+        mean_value = torch.zeros(3)        
+        for i in range(3):
+            mono_albedo = vis[i]
+            selected_values = mono_albedo[mask]
+            if selected_values.numel() > 0:
+                mean_value[i] = selected_values.median()
+            else:
+                mean_value[i] = float('nan')  # 값이 없을 경우 NaN
+        mean_values.append(mean_value)    
+    print(mean_values)
+
+    return {
+        'input images': images,
+        'face categories': categories,
+        'mean_values': torch.stack(mean_values)
+    }
+
+def change_skin_color(target_rgbs: torch.Tensor, min_thrd=20, max_thrd=160):
+    """_summary_
+
+    Args:
+        target_rgbs (torch.Tensor): (b, 3))
+    """
+    from creadto.utils.io import load_image
+    converted = []
+    for rgb in target_rgbs:
+        # Find skin tone
+        # base_basis = base_mask.unsqueeze(dim=0).expand_as(skin) * (base_diff - basis_median).view(-1, 1, 1)
+        # fetched_skin = torch.clamp(skin + face_basis, 0.0, 1.0)
+        image = load_image(r"creadto-model\textures\MSTScale\Samples\mono_body-masks.png")[0]
+        image = image.type(torch.FloatTensor).to(rgb.device)
+        diff = rgb - torch.tensor([205., 205., 205.]).to(rgb.device)
+        painted = torch.clamp(image + diff.view(-1, 1, 1), 0, 255)
+        converted.append(painted)
+    return torch.stack(converted)
+
+def paint_with_mask(images: torch.Tensor, masks: torch.Tensor, colors: torch.Tensor):
+    """_summary_
+
+    Args:
+        images (torch.Tensor): (b, c, w, h)
+        masks (torch.Tensor): (b, w, h)
+        color (torch.Tensor): (b, 3)
+    """
+    painted_images = []
+    colors = colors.to(images.device)
+    for image, mask, color in zip(images, masks, colors):
+        partial = color.view(-1, 1, 1) * mask.expand_as(image)
+        painted = image * (1-mask.expand_as(image)) + partial
+        painted_images.append(painted)
+    return torch.stack(painted_images)
+  
+def run_paint_cycle(root: str = r"D:\dump\sample\head_images",
+                    mask_root: str = r"D:\Creadto\CreadtoLibrary\creadto-model\textures\MSTScale\Samples") -> Dict[str, object]:
+    import torchvision
+    # load images
+    from creadto.utils.io import load_images, load_image
+    device = "cuda:0"
+    images = load_images(root, device)
+    eye_dict = get_parts_colour(images, ['left_eye', 'right_eye'])
+    lip_dict = get_parts_colour(images, ['lower_lip', 'upper_lip'], max_thrd=255)
+    eyebrow_dict = get_parts_colour(images, ['left_eyebrow', 'right_eyebrow'], max_thrd=255)
+    skin_value = enhance_face_skin(images)
+    
+    # Paint skin-tone
+    colored_skin = change_skin_color(target_rgbs=skin_value)
+    for i, image in enumerate(colored_skin):
+        pil_image = torchvision.transforms.functional.to_pil_image(image / 255.)
+        pil_image.save("%d-th colored skin.png" % i)
+    # Paint iris
+    iris_masks = load_image(osp.join(mask_root, "weighted_green_mask.png"), mono=True)
+    iris_masks = iris_masks.type(torch.FloatTensor) / 255.
+    iris_masks = iris_masks.expand(colored_skin[:, 0].shape)
+    iris_masks = iris_masks.to(colored_skin.device)
+    iris_painted = paint_with_mask(colored_skin, iris_masks, eye_dict['mean_values'])
+    for i, image in enumerate(iris_painted):
+        pil_image = torchvision.transforms.functional.to_pil_image(image / 255.)
+        pil_image.save("%d-th iris skin.png" % i)
+    # Paint lips
+    lip_masks = load_image(osp.join(mask_root, "weighted_red_mask.png"), mono=True)
+    lip_masks = lip_masks.type(torch.FloatTensor) / 255.
+    lip_masks = lip_masks.expand(iris_painted[:, 0].shape)
+    lip_masks = lip_masks.to(colored_skin.device)
+    lip_painted = paint_with_mask(iris_painted, lip_masks, lip_dict['mean_values'])
+    for i, image in enumerate(lip_painted):
+        pil_image = torchvision.transforms.functional.to_pil_image(image / 255.)
+        pil_image.save("%d-th lip skin.png" % i)
+    # Draw eyebrows
+    pass
+# endregion
+
+def dump():
+    from creadto.
+    root = r"eyebrow_mask.png"
+    
+
+
 if __name__ == "__main__":
     # merge_mask()
     # make_contour_mask()
@@ -446,7 +675,11 @@ if __name__ == "__main__":
     # map_body_texture(r"D:\Creadto\CreadtoLibrary\output\only_face.jpg", r"D:\Creadto\CreadtoLibrary\output\inference_mask.jpg")
     # merge_face_default(face_path=r"D:\dump\temp\result_head-0th.png", mask_root=r"D:\Creadto\CreadtoLibrary\creadto-model\flame\mask_images")
     # map_body_texture(face_texture_path=r"./merged_image.png", mask_path=r"D:\Creadto\CreadtoLibrary\creadto-model\flame\mask_images\inference_mask.jpg")
-    # modify_skin_color()
+    # modify_skin_color(target_image=r"creadto-model\textures\MSTScale\Samples\mono_body-masks.png",
+    #                   skin_mask_path=r"creadto-model\flame\mask_images\mono-body-mask.png")
     # run_full_cycle(root=r"D:/dump/sample")
     # run_cut_only_head_image()
-    dummy()
+    #dummy()
+    #enhance_face_skin()
+    run_paint_cycle()
+    # make_weighted_masks()

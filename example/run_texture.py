@@ -4,9 +4,9 @@ from PIL import Image
 
 
 def image_to_texture(root):
-    from creadto.models.tex import NakedHuman
+    from creadto.models.tex import PaintHuman
     
-    model = NakedHuman()
+    model = PaintHuman()
     files = os.listdir(root)
     raw_images = []
     for i, file in enumerate(files):
