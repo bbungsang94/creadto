@@ -5,6 +5,7 @@ import cv2
 import torch
 import torchvision
 import numpy as np
+from PIL import Image
 
 
 def image_to_gender(images):
@@ -24,8 +25,7 @@ def image_to_blass(root):
     h = 450
     w = 300
     for i, file in enumerate(files):
-        image = cv2.imread(file)
-        image = cv2.resize(image, dsize=(w, h), interpolation=cv2.INTER_LINEAR)
+        image = Image.open(osp.join(root, file))
         raw_images.append(image)
     raw_images = np.stack(raw_images, axis=0)
     return hlamp(raw_images)
@@ -33,7 +33,6 @@ def image_to_blass(root):
 
 def image_to_flaep(root):
     from creadto.models.recon import DetailFaceModel
-    trans = torchvision.transforms.ToTensor()
     flaep = DetailFaceModel()
     # files = os.listdir(os.path.join(root, "raw"))
     files = os.listdir(root)
@@ -43,12 +42,12 @@ def image_to_flaep(root):
     h = 450
     w = 300
     for i, file in enumerate(files):
-        image = cv2.imread(file)
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        image = cv2.resize(image, dsize=(w, h), interpolation=cv2.INTER_LINEAR)
-        raw_images.append(trans(image))
+        image = Image.open(osp.join(root, file))
+        raw_images.append(image)
     raw_images = torch.stack(raw_images, dim=0)
-    result = flaep(raw_images)
+    crop_images, process = flaep.encode_pil(image)
+    result = flaep.decode(crop_images)
+    result['process'] = process
     result['names'] = files
     return result, flaep.reconstructor
 

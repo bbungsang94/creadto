@@ -47,7 +47,7 @@ class PaintHuman:
         # displace eyelid
         head_albedos = self.decouple_head_albedo(colored_albedos)
         head_images = head_images  / 255.
-        result = self.flaep.decode(head_images, external_tex=head_albedos / 255., external_img=skin_dict['enhnaced_images'] / 255.)
+        result = self.flaep.decode(head_images, external_tex=head_albedos / 255., external_img=skin_dict['enhanced_images'] / 255.)
         up_sample = transforms.Compose([transforms.Resize((512, 512))])
         head_albedos = up_sample(head_albedos)
         body_eyelid_mask = self.to_body_texture(self.masks['eyelid'].to(head_albedos.device)[None, :])[0]
@@ -98,7 +98,7 @@ class PaintHuman:
         for part in parts:
             masks += seg_probs[:, categories[part]]
         mean_values = []
-        enhnaced_images = []
+        enhanced_images = []
         filtered_images = []
         for image, mask in zip(images, masks):
             vis = image * mask.expand_as(image)
@@ -128,11 +128,11 @@ class PaintHuman:
             mean_skin = (vis + flat_skin) / 2.0
             face_filter = mask.expand_as(image)
             enhanced = image * (1 - face_filter) + mean_skin * face_filter
-            enhnaced_images.append(enhanced)
+            enhanced_images.append(enhanced)
             mean_values.append(mean_value)
 
         return {
-            'enhnaced_images': torch.stack(enhnaced_images),
+            'enhanced_images': torch.stack(enhanced_images),
             'segmented_images': filtered_images,
             'mean_values': torch.stack(mean_values)
         }
