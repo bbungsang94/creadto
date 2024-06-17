@@ -5,6 +5,7 @@ import cv2
 import torch
 import torchvision
 import numpy as np
+from PIL import Image
 
 
 def image_to_gender(images):
@@ -21,11 +22,8 @@ def image_to_blass(root):
     files = [os.path.join(root, x) for x in files]
     raw_images = []
     hlamp = BLASS()
-    h = 450
-    w = 300
     for i, file in enumerate(files):
-        image = cv2.imread(file)
-        image = cv2.resize(image, dsize=(w, h), interpolation=cv2.INTER_LINEAR)
+        image = Image.open(osp.join(root, file))
         raw_images.append(image)
     raw_images = np.stack(raw_images, axis=0)
     return hlamp(raw_images)
@@ -33,24 +31,21 @@ def image_to_blass(root):
 
 def image_to_flaep(root):
     from creadto.models.recon import DetailFaceModel
-    trans = torchvision.transforms.ToTensor()
     flaep = DetailFaceModel()
     # files = os.listdir(os.path.join(root, "raw"))
     files = os.listdir(root)
     files = [os.path.join(root, x) for x in files]
     #files = [os.path.join(root, "raw", x) for x in files]
     raw_images = []
-    h = 450
-    w = 300
     for i, file in enumerate(files):
-        image = cv2.imread(file)
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        image = cv2.resize(image, dsize=(w, h), interpolation=cv2.INTER_LINEAR)
-        raw_images.append(trans(image))
+        image = Image.open(osp.join(root, file))
+        raw_images.append(image)
     raw_images = torch.stack(raw_images, dim=0)
-    result = flaep(raw_images)
+    crop_images, process = flaep.encode_pil(image)
+    result = flaep.decode(crop_images)
+    result['process'] = process
     result['names'] = files
-    return result, flaep.reconstructor
+    return result
 
 
 def body_to_measure(vertices, gender):
@@ -93,7 +88,7 @@ def procedure(root):
     from creadto.models.legacy import ModelConcatenator
     from creadto.utils.io import save_mesh
     concatenator = ModelConcatenator(root="./creadto-model/template")
-    face_model, recon_model = image_to_flaep(root=osp.join(root, "input_images"))
+    face_model = image_to_flaep(root=osp.join(root, "input_images"))
     gender = image_to_gender(images=face_model['crop_image'])
     body_model = image_to_blass(root=osp.join(root, "input_images"))
     body_measurement = body_to_measure(body_model['plane_vertex'], gender)
@@ -103,6 +98,9 @@ def procedure(root):
     if osp.exists(osp.join(root, "posed_model")):
         shutil.rmtree(osp.join(root, "posed_model"))
     os.mkdir(osp.join(root, "posed_model"))
+    if osp.exists(osp.join(root, "measurements")):
+        shutil.rmtree(osp.join(root, "measurements"))
+    os.mkdir(osp.join(root, "measurements"))
     if osp.exists(osp.join(root, "plane_model")):
         shutil.rmtree(osp.join(root, "plane_model"))
     os.mkdir(osp.join(root, "plane_model"))

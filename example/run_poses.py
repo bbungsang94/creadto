@@ -18,7 +18,7 @@ def load_texture_model(root):
         file_dict['texture'].append(texture)
     return file_dict
 
-def load_poses_paramters(root):
+def load_poses_parameters(root):
     files = os.listdir(root)
     file_dict = {
         'pose_parameter': [],
@@ -36,7 +36,7 @@ def procedure(root):
     from torchvision.transforms.functional import to_pil_image
     
     file_dict = load_texture_model(osp.join(root, "texture-model"))
-    file_dict.update(load_poses_paramters(osp.join(root, "pose_parameter")))
+    file_dict.update(load_poses_parameters(osp.join(root, "pose_parameter")))
     smpl = SMPL("./creadto-model")
     
     if osp.exists(osp.join(root, "pose-imitating")):

@@ -56,7 +56,7 @@ if __name__ == "__main__":
     # os.environ["CUDA_VISIBLE_DEVICES"] = "0"
     # os.environ["TORCH_USE_CUDA_DSA"] = '1'
     
-    from example.run_poses import procedure
+    from example.run_hlamp import procedure
     procedure(global_root)
     
     # extract_shadow()
