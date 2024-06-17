@@ -26,7 +26,7 @@ class PaintHuman:
         self.masks = {
             'iris': load_image(osp.join(mask_root, "weighted_green_mask.png"), mono=True, integer=False),
             'lips': load_image(osp.join(mask_root, "weighted_red_mask.png"), mono=True, integer=False),
-            'eyelid': load_image(osp.join(mask_root, "eyelid.jpg"), mono=True, integer=False)
+            'eyelid': load_image(osp.join(mask_root, "face.jpg"), mono=True, integer=False)
             
         }
     def __call__(self, images: List[Image]):

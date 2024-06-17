@@ -109,7 +109,15 @@ def procedure(root):
     if osp.exists(osp.join(root, "head_model")):
         shutil.rmtree(osp.join(root, "head_model"))
     os.mkdir(osp.join(root, "head_model"))
+    if osp.exists(osp.join(root, "pose_parameter")):
+        shutil.rmtree(osp.join(root, "pose_parameter"))
+    os.mkdir(osp.join(root, "pose_parameter"))
     
+    for i, pose in enumerate(body_model['shape_parameters']['pose']):
+        filename = face_model['names'][i].split('.')[0] + ".pth"
+        filename = filename.replace("input_images", "pose_parameter")
+        torch.save(pose, filename)
+        
     # save only vertices and faces, no textures, no normal maps, no materials
     for i, tup in enumerate(zip(body_model['vertex'], humans['model']['body'])):
         v, pv = tup
