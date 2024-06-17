@@ -34,7 +34,7 @@ class PaintHuman:
         head_images, process = self.flaep.encode_pil(images)
         # face parsing
         head_images = head_images * 255.
-        eye_dict = self.get_parts_colour(head_images, ['left_eye', 'right_eye'])
+        eye_dict = self.get_parts_colour(head_images, ['left_eye', 'right_eye'], min_thrd=20)
         lip_dict = self.get_parts_colour(head_images, ['lower_lip', 'upper_lip'], min_thrd=40, max_thrd=255)
         eyebrow_dict = self.get_parts_colour(head_images, ['left_eyebrow', 'right_eyebrow'], max_thrd=255)
         skin_dict = self.get_parts_colour(head_images, ['skin', 'nose'], max_thrd=255)
