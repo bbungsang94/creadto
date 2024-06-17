@@ -40,7 +40,7 @@ def save_texture_models(root, op_dict, uvcoord, uvface):
         vertex = vertex.cpu().detach().numpy()
         face = face.cpu().detach().numpy()
         save_mesh(osp.join(root, name + ".obj"), vertex, face,
-                  texture=to_pil_image(texture), uvcoords=uvcoord, uvfaces=uvface)
+                  texture=to_pil_image(texture / 255.), uvcoords=uvcoord, uvfaces=uvface)
         
 def procedure(root):
     import torchvision
@@ -51,7 +51,7 @@ def procedure(root):
     if osp.exists(osp.join(root, "head-texture")) is False:
         os.mkdir(osp.join(root, "head-texture"))
     for i, head_albedo in enumerate(result_dict['head_texture']):
-        pil_image = torchvision.transforms.functional.to_pil_image(head_albedo.cpu().detach())
+        pil_image = torchvision.transforms.functional.to_pil_image(head_albedo.cpu().detach() / 255.)
         pil_image.save(osp.join(root, "head-texture", "%d-th head_texture.png" % i))
     for i, name in enumerate(names):
         name = name.split('.')[0]

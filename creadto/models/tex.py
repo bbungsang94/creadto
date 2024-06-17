@@ -35,9 +35,9 @@ class PaintHuman:
         # face parsing
         head_images = head_images * 255.
         eye_dict = self.get_parts_colour(head_images, ['left_eye', 'right_eye'])
-        lip_dict = self.get_parts_colour(head_images, ['lower_lip', 'upper_lip'], max_thrd=255)
+        lip_dict = self.get_parts_colour(head_images, ['lower_lip', 'upper_lip'], min_thrd=40, max_thrd=255)
         eyebrow_dict = self.get_parts_colour(head_images, ['left_eyebrow', 'right_eyebrow'], max_thrd=255)
-        skin_dict = self.get_parts_colour(head_images, ['skin', 'nose'])
+        skin_dict = self.get_parts_colour(head_images, ['skin', 'nose'], max_thrd=255)
         # paint skin
         colored_albedos = self.paint_skin(skin_dict['mean_values'])
         # paint iris
@@ -46,14 +46,26 @@ class PaintHuman:
         colored_albedos = self.paint_with_mask(colored_albedos, self.masks['lips'], lip_dict['mean_values'])
         # displace eyelid
         head_albedos = self.decouple_head_albedo(colored_albedos)
-        result = self.flaep.decode(head_images / 255., external_img=head_albedos / 255.)
-        pack = zip(head_albedos, result["uv_texture_gt"])
+        head_images = head_images  / 255.
+        result = self.flaep.decode(head_images, external_tex=head_albedos / 255., external_img=skin_dict['enhnaced_images'] / 255.)
+        up_sample = transforms.Compose([transforms.Resize((512, 512))])
+        head_albedos = up_sample(head_albedos)
+        body_eyelid_mask = self.to_body_texture(self.masks['eyelid'].to(head_albedos.device)[None, :])[0]
+        face_albedos = self.to_body_texture(up_sample(result["uv_texture_gt"]) * 255.)
+        pack = zip(colored_albedos, face_albedos)
         for i, tup in enumerate(pack):
-            head_albedo, face_albedo = tup
-            head_albedos[i] = copy.deepcopy(head_albedo + self.masks['eyelid'] * face_albedo)
-        full_albedos = self.couple_body_texture(head_albedos, colored_albedos)
+            full_albedo, face_albedo = tup
+            colored_albedos[i] = copy.deepcopy((1. - body_eyelid_mask) * full_albedo + body_eyelid_mask * face_albedo)
         # fetch eyebrow
-        return full_albedos
+        
+        vis_dict = {
+            'head_images': head_images,
+            'face_detection': process,
+            'head_texture': up_sample(result["uv_texture_gt"]) * 255.,
+            'full_texture': colored_albedos
+        }
+        
+        return vis_dict
 
     def get_parts_colour(self, images: torch.Tensor, parts: List[str], min_thrd = 5, max_thrd = 170) -> Dict[str, object]:
         """From head image (b, 3, 224, 224), extract eye(iris) colour without sclera.
@@ -86,6 +98,7 @@ class PaintHuman:
         for part in parts:
             masks += seg_probs[:, categories[part]]
         mean_values = []
+        enhnaced_images = []
         filtered_images = []
         for image, mask in zip(images, masks):
             vis = image * mask.expand_as(image)
@@ -106,9 +119,20 @@ class PaintHuman:
                     mean_value[i] = selected_values.median()
                 else:
                     mean_value[i] = float('nan')  # 값이 없을 경우 NaN
+            
+            flat_skin = torch.zeros_like(vis)
+            mean_skin = torch.zeros_like(vis)
+            for i in range(3):
+                flat_skin[i, :, :] = mask * mean_value[i]
+
+            mean_skin = (vis + flat_skin) / 2.0
+            face_filter = mask.expand_as(image)
+            enhanced = image * (1 - face_filter) + mean_skin * face_filter
+            enhnaced_images.append(enhanced)
             mean_values.append(mean_value)
 
         return {
+            'enhnaced_images': torch.stack(enhnaced_images),
             'segmented_images': filtered_images,
             'mean_values': torch.stack(mean_values)
         }
@@ -123,7 +147,7 @@ class PaintHuman:
             converted.append(painted)
         return torch.stack(converted)
     
-    def paint_with_mask(self, images: torch.Tensor, masks: torch.Tensor, colors: torch.Tensor):
+    def paint_with_mask(self, images: torch.Tensor, mask: torch.Tensor, colors: torch.Tensor):
         """_summary_
 
         Args:
@@ -133,7 +157,8 @@ class PaintHuman:
         """
         painted_images = []
         colors = colors.to(images.device)
-        for image, mask, color in zip(images, masks, colors):
+        mask = mask.to(images.device)
+        for image, color in zip(images, colors):
             partial = color.view(-1, 1, 1) * mask.expand_as(image)
             painted = image * (1-mask.expand_as(image)) + partial
             painted_images.append(painted)
@@ -143,11 +168,36 @@ class PaintHuman:
         device = albedo.device
         dtype = albedo.dtype
 
+        head_albedo = torch.zeros((albedo.shape[0], 3, 256, 256), dtype=dtype, device=device, requires_grad=False)
+        
         x_coords = torch.tensor(self.bridge['x_coords'], dtype=torch.int32, device=device, requires_grad=False)
         y_coords = torch.tensor(self.bridge['y_coords'], dtype=torch.int32, device=device, requires_grad=False)
         target_pixel_ids = torch.tensor(self.bridge['target_pixel_ids'], dtype=torch.int32, device=device, requires_grad=False)
+        source_uv_points = torch.tensor(self.bridge['source_uv_points'], dtype=torch.float32, device=device, requires_grad=False)
+        source_tex_coords = torch.zeros((source_uv_points.shape[0], source_uv_points.shape[1]), dtype=torch.int32, device=device, requires_grad=False)
+        source_tex_coords[:, 0] = torch.clamp(head_albedo.shape[2]*(1.0-source_uv_points[:,1]), 0.0, head_albedo.shape[2]).type(torch.IntTensor)
+        source_tex_coords[:, 1] = torch.clamp(head_albedo.shape[3]*(source_uv_points[:,0]), 0.0, head_albedo.shape[3]).type(torch.IntTensor)
+        
+        head_albedo[:, :, source_tex_coords[:,0], source_tex_coords[:,1]] = albedo[:, :, y_coords[target_pixel_ids], x_coords[target_pixel_ids]]
+        return copy.deepcopy(head_albedo)
+    
+    def to_body_texture(self, partial_albedo: torch.Tensor):
+        batch_size = partial_albedo.shape[0]
+        channel = partial_albedo.shape[1]
+        device = partial_albedo.device
+        dtype = partial_albedo.dtype
 
-        return copy.deepcopy(albedo[:, :, y_coords[target_pixel_ids], x_coords[target_pixel_ids]])
+        body_albedo = torch.zeros((batch_size, channel, 1024, 1024), dtype=dtype, device=device, requires_grad=False)
+        x_coords = torch.tensor(self.bridge['x_coords'], dtype=torch.int32, device=device, requires_grad=False)
+        y_coords = torch.tensor(self.bridge['y_coords'], dtype=torch.int32, device=device, requires_grad=False)
+        target_pixel_ids = torch.tensor(self.bridge['target_pixel_ids'], dtype=torch.int32, device=device, requires_grad=False)
+        source_uv_points = torch.tensor(self.bridge['source_uv_points'], dtype=torch.float32, device=device, requires_grad=False)
+        source_tex_coords = torch.zeros((source_uv_points.shape[0], source_uv_points.shape[1]), dtype=torch.int32, device=device, requires_grad=False)
+        source_tex_coords[:, 0] = torch.clamp(partial_albedo.shape[2]*(1.0-source_uv_points[:,1]), 0.0, partial_albedo.shape[2]).type(torch.IntTensor)
+        source_tex_coords[:, 1] = torch.clamp(partial_albedo.shape[3]*(source_uv_points[:,0]), 0.0, partial_albedo.shape[3]).type(torch.IntTensor)
+
+        body_albedo[:, :, y_coords[target_pixel_ids], x_coords[target_pixel_ids]] = partial_albedo[:, :, source_tex_coords[:,0], source_tex_coords[:,1]]
+        return copy.deepcopy(body_albedo)
     
     def couple_body_texture(self, head_albedo: torch.Tensor, body_albedo: torch.Tensor):
         """_summary_
@@ -163,12 +213,11 @@ class PaintHuman:
         target_pixel_ids = torch.tensor(self.bridge['target_pixel_ids'], dtype=torch.int32, device=device, requires_grad=False)
         source_uv_points = torch.tensor(self.bridge['source_uv_points'], dtype=torch.float32, device=device, requires_grad=False)
         source_tex_coords = torch.zeros((source_uv_points.shape[0], source_uv_points.shape[1]), dtype=torch.int32, device=device, requires_grad=False)
-        source_tex_coords[:, 0] = torch.clamp(head_albedo.shape[1]*(1.0-source_uv_points[:,1]), 0.0, head_albedo.shape[1]).type(torch.IntTensor)
-        source_tex_coords[:, 1] = torch.clamp(head_albedo.shape[2]*(source_uv_points[:,0]), 0.0, head_albedo.shape[2]).type(torch.IntTensor)
+        source_tex_coords[:, 0] = torch.clamp(head_albedo.shape[2]*(1.0-source_uv_points[:,1]), 0.0, head_albedo.shape[2]).type(torch.IntTensor)
+        source_tex_coords[:, 1] = torch.clamp(head_albedo.shape[3]*(source_uv_points[:,0]), 0.0, head_albedo.shape[3]).type(torch.IntTensor)
 
         body_albedo[:, :, y_coords[target_pixel_ids], x_coords[target_pixel_ids]] = head_albedo[:, :, source_tex_coords[:,0], source_tex_coords[:,1]]
-        albedo = copy.deepcopy(body_albedo)
-        return albedo
+        return body_albedo
     
 class NakedHuman:
     def __init__(self, device="cuda:0"):
