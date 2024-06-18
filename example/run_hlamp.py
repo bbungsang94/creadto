@@ -25,7 +25,6 @@ def image_to_blass(root):
     for i, file in enumerate(files):
         image = Image.open(osp.join(root, file))
         raw_images.append(image)
-    raw_images = np.stack(raw_images, axis=0)
     return hlamp(raw_images)
 
 
@@ -40,8 +39,7 @@ def image_to_flaep(root):
     for i, file in enumerate(files):
         image = Image.open(osp.join(root, file))
         raw_images.append(image)
-    raw_images = torch.stack(raw_images, dim=0)
-    crop_images, process = flaep.encode_pil(image)
+    crop_images, process = flaep.encode_pil(raw_images)
     result = flaep.decode(crop_images)
     result['process'] = process
     result['names'] = files
@@ -87,35 +85,49 @@ def procedure(root):
     import open3d as o3d
     from creadto.models.legacy import ModelConcatenator
     from creadto.utils.io import save_mesh
+    
+    name_card = {
+        'in-image': 'input-images',
+        'm-posed': 'modeling-posed',
+        'm-plane': 'modeling-plane',
+        'm-head': 'modeling-head',
+        'm-densehead': 'modeling-densehead',
+        'u-measurement': 'utility-measurement',
+        'p-body-pose': 'parameter-body-pose',
+        'i-normal-head': 'image-normal-head',
+    }
+    for key, value in name_card.items():
+        if 'in-' == key[:3]:
+            continue
+        if osp.exists(osp.join(root, value)):
+            shutil.rmtree(osp.join(root, value))
+        os.mkdir(osp.join(root, value))
+        
     concatenator = ModelConcatenator(root="./creadto-model/template")
-    face_model = image_to_flaep(root=osp.join(root, "input_images"))
+    face_model = image_to_flaep(root=osp.join(root, name_card['in-image']))
     gender = image_to_gender(images=face_model['crop_image'])
-    body_model = image_to_blass(root=osp.join(root, "input_images"))
+    body_model = image_to_blass(root=osp.join(root, name_card['in-image']))
     body_measurement = body_to_measure(body_model['plane_vertex'], gender)
     face_measurement = head_to_measure(face_model['plane_verts'])
     humans = concatenator.update_model(body=body_model['plane_vertex'], head=face_model['plane_verts'], visualize=False)
     
-    if osp.exists(osp.join(root, "posed_model")):
-        shutil.rmtree(osp.join(root, "posed_model"))
-    os.mkdir(osp.join(root, "posed_model"))
-    if osp.exists(osp.join(root, "measurements")):
-        shutil.rmtree(osp.join(root, "measurements"))
-    os.mkdir(osp.join(root, "measurements"))
-    if osp.exists(osp.join(root, "plane_model")):
-        shutil.rmtree(osp.join(root, "plane_model"))
-    os.mkdir(osp.join(root, "plane_model"))
-    if osp.exists(osp.join(root, "head_model")):
-        shutil.rmtree(osp.join(root, "head_model"))
-    os.mkdir(osp.join(root, "head_model"))
-    if osp.exists(osp.join(root, "pose_parameter")):
-        shutil.rmtree(osp.join(root, "pose_parameter"))
-    os.mkdir(osp.join(root, "pose_parameter"))
-    
     for i, pose in enumerate(body_model['shape_parameters']['pose']):
         filename = face_model['names'][i].split('.')[0] + ".pth"
-        filename = filename.replace("input_images", "pose_parameter")
+        filename = filename.replace(name_card['in-image'], name_card['p-body-pose'])
         torch.save(pose, filename)
+    
+    pack = zip(face_model['dense_verts'], face_model['dense_faces'], face_model['dense_colors'])
+    for i, tup in enumerate(pack):
+        v, f, c = tup
+        file_path = face_model['names'][i].split('.')[0]
+        detail_path = file_path.replace(name_card['in-image'], name_card['m-densehead'])
+        save_mesh(obj_name=detail_path + ".obj", vertices=v, faces=f, colors=c)
         
+        dnor = face_model['uv_detail_normals'][i]
+        dnor_pil = torchvision.transforms.functional.to_pil_image(dnor)
+        normal_path = file_path.replace(name_card['in-image'], name_card['i-normal-head'])
+        dnor_pil.save(normal_path + ".png")
+                
     # save only vertices and faces, no textures, no normal maps, no materials
     for i, tup in enumerate(zip(body_model['vertex'], humans['model']['body'])):
         v, pv = tup
@@ -124,20 +136,13 @@ def procedure(root):
         mesh.triangles = o3d.utility.Vector3iVector(body_model['face'])
         # o3d.visualization.draw_geometries([mesh])
         file_path = face_model['names'][i].split('.')[0]
-        pose_path = file_path.replace("input_images", "posed_model")
+        pose_path = file_path.replace(name_card['in-image'], name_card['m-posed'])
         save_mesh(obj_name=pose_path + ".obj", vertices=v, faces=body_model['face'])
-        plane_path = file_path.replace("input_images", "plane_model")
+        plane_path = file_path.replace(name_card['in-image'], name_card['m-plane'])
         save_mesh(obj_name=plane_path + ".obj", vertices=pv, faces=body_model['face'])
-        head_path = file_path.replace("input_images", "head_model")
+        head_path = file_path.replace(name_card['in-image'], name_card['m-head'])
         head_face = face_model['faces'].cpu().detach().numpy()
         coarse_head_vertex = humans['model']['coarse_head'][i]
         save_mesh(obj_name=head_path + "-ch.obj", vertices=coarse_head_vertex, faces=head_face)
         head_vertex = humans['model']['head'][i]
         save_mesh(obj_name=head_path + "-h.obj", vertices=head_vertex, faces=head_face)
-    # for i, v in enumerate(humans['model']['body']):
-    #     mesh = o3d.geometry.TriangleMesh()
-    #     mesh.vertices = o3d.utility.Vector3dVector(v.cpu().detach().numpy())
-    #     mesh.triangles = o3d.utility.Vector3iVector(body_model['face'])
-    #     file_path = face_model['names'][i].split('.')[0]
-    #     file_path = file_path.replace("input_images", "plane_model")
-    #     o3d.io.write_triangle_mesh(file_path + ".obj", mesh)

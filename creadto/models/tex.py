@@ -1,4 +1,5 @@
 import copy
+import facer
 from typing import Dict, List, Tuple
 from PIL.Image import Image
 import torch
@@ -9,7 +10,6 @@ from torchvision import transforms
 
 class PaintHuman:
     def __init__(self, device="cuda:0"):
-        import facer
         from creadto.utils.io import load_image
         from creadto.models.recon import DetailFaceModel
         model_root = "creadto-model"
@@ -26,7 +26,7 @@ class PaintHuman:
         self.masks = {
             'iris': load_image(osp.join(mask_root, "weighted_green_mask.png"), mono=True, integer=False),
             'lips': load_image(osp.join(mask_root, "weighted_red_mask.png"), mono=True, integer=False),
-            'eyelid': load_image(osp.join(mask_root, "face.jpg"), mono=True, integer=False)
+            'eyelid': load_image(osp.join(mask_root, "eyelid.jpg"), mono=True, integer=False)
             
         }
     def __call__(self, images: List[Image]):
@@ -48,6 +48,7 @@ class PaintHuman:
         head_albedos = self.decouple_head_albedo(colored_albedos)
         head_images = head_images  / 255.
         result = self.flaep.decode(head_images, external_tex=head_albedos / 255., external_img=skin_dict['enhanced_images'] / 255.)
+        landmarks2d = result['visualize']['landmarks2d'] * result['visualize']['inputs'].shape[-1]
         up_sample = transforms.Compose([transforms.Resize((512, 512))])
         head_albedos = up_sample(head_albedos)
         body_eyelid_mask = self.to_body_texture(self.masks['eyelid'].to(head_albedos.device)[None, :])[0]
@@ -59,10 +60,14 @@ class PaintHuman:
         # fetch eyebrow
         
         vis_dict = {
+            'segmented_images': skin_dict['segmented_images'] / 255.,
+            'enhanced_images': skin_dict['enhanced_images'] / 255.,
+            'filtered_images': skin_dict['filtered_images'] / 255.,
             'head_images': head_images,
             'face_detection': process,
-            'head_texture': up_sample(result["uv_texture_gt"]) * 255.,
-            'full_texture': colored_albedos
+            'head_albedos': torch.clamp(up_sample(result["uv_texture_gt"]), 0., 1.),
+            'full_albedos': colored_albedos,
+            'landmarks2d': landmarks2d
         }
         
         return vis_dict
@@ -91,6 +96,7 @@ class PaintHuman:
         with torch.inference_mode():
             faces = self.face_detector(images)
             faces = self.face_parser(images, faces)
+        vis_images = facer.draw_bchw(images, faces)
         seg_logits = faces['seg']['logits']
         seg_probs = seg_logits.softmax(dim=1)
         
@@ -132,8 +138,9 @@ class PaintHuman:
             mean_values.append(mean_value)
 
         return {
+            'segmented_images': vis_images,
             'enhanced_images': torch.stack(enhanced_images),
-            'segmented_images': filtered_images,
+            'filtered_images': torch.stack(filtered_images),
             'mean_values': torch.stack(mean_values)
         }
     

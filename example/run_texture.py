@@ -1,5 +1,8 @@
 import os
 import os.path as osp
+import shutil
+import torchvision
+import numpy as np
 from PIL import Image
 
 
@@ -9,18 +12,17 @@ def image_to_texture(root):
     model = PaintHuman()
     files = os.listdir(root)
     raw_images = []
-    for i, file in enumerate(files):
-        image = Image.open(osp.join(root, file))
+    for name in files:
+        image = Image.open(osp.join(root, name))
         raw_images.append(image)
-    return model(raw_images), files
+    return model(raw_images), [x.split('.')[0] for x in files]
 
-def load_plane_models(root):
+def load_plane_models(root, names):
     from creadto.utils.io import load_mesh
-    files = os.listdir(root)
     models = dict()
-    for i, file in enumerate(files):
-        v, f, _, _ = load_mesh(osp.join(root, file))
-        models[file.split('.')[0]] = (v, f)
+    for name in names:
+        v, f, _, _ = load_mesh(osp.join(root, name + ".obj"))
+        models[name] = (v, f)
     _, _, uvcoords, uvfaces = load_mesh(osp.join("creadto-model", "template", "naked_body.obj"))
     
     return models, uvcoords, uvfaces
@@ -43,19 +45,58 @@ def save_texture_models(root, op_dict, uvcoord, uvface):
                   texture=to_pil_image(texture / 255.), uvcoords=uvcoord, uvfaces=uvface)
         
 def procedure(root):
-    import torchvision
-    # must be pair a set of vertex and faces and an texture image
-    models, uvcoords, uvfaces = load_plane_models(osp.join(root, "plane_model"))
-    result_dict, names = image_to_texture(osp.join(root, "input_images"))
-    
-    if osp.exists(osp.join(root, "head-texture")) is False:
-        os.mkdir(osp.join(root, "head-texture"))
-    for i, head_albedo in enumerate(result_dict['head_texture']):
-        pil_image = torchvision.transforms.functional.to_pil_image(head_albedo.cpu().detach() / 255.)
-        pil_image.save(osp.join(root, "head-texture", "%d-th head_texture.png" % i))
-    for i, name in enumerate(names):
-        name = name.split('.')[0]
-        v, f = models[name]
-        models[name] = (v, f, result_dict['full_texture'][i])
+    from creadto.utils.io import save_mesh
+    from torchvision.transforms.functional import to_pil_image
+    name_card = {
+        'in-image': 'input-images',
+        'in-plane': 'modeling-plane',
+        'i-head': 'image-head-cropped',
+        'i-head-albedo': 'image-head-albedo',
+        'i-face-enhanced': 'image-face-enhanced',
+        'i-face-parsing': 'image-face-parsing',
+        'i-skin-filtered': 'image-skin-filtered',
+        'p-head-landmark': 'parameter-face-landmark',
+        't-naked': 'texture-naked',
+    }
+    for key, value in name_card.items():
+        if 'in-' == key[:3]:
+            continue
+        if osp.exists(osp.join(root, value)):
+            shutil.rmtree(osp.join(root, value))
+        os.mkdir(osp.join(root, value))
         
-    save_texture_models(osp.join(root, "texture-model"), models, uvcoords, uvfaces)
+    # must be pair a set of vertex and faces and an texture image
+    tex_dict, names = image_to_texture(osp.join(root, name_card['in-image']))
+    models, uvcoords, uvfaces = load_plane_models(osp.join(root, name_card['in-plane']), names)
+    
+    image_pack = {
+        name_card['i-head']: tex_dict['head_images'],
+        name_card['i-head-albedo']: tex_dict['head_albedos'],
+        name_card['i-face-parsing']: tex_dict['segmented_images'],
+        name_card['i-face-enhanced']: tex_dict['enhanced_images'],
+        name_card['i-skin-filtered']: tex_dict['filtered_images']
+    }
+    for i, name in enumerate(names):
+        v, f = models[name]
+        models[name] = (v, f, tex_dict['full_albedos'][i])
+        for key, value in image_pack.items():
+            image = value[i]
+            pil_image = torchvision.transforms.functional.to_pil_image(image)
+            image_path = osp.join(root, key, name + ".png") 
+            pil_image.save(image_path)
+
+        landmarks2d = tex_dict['landmarks2d'][i].cpu().detach().numpy()
+        np.save(osp.join(root, name_card['p-head-landmark'], name + ".npy"), landmarks2d)
+        
+    uvcoord = uvcoords.cpu().detach().numpy()
+    uvface = uvfaces.cpu().detach().numpy()
+    for name, vft in models.items():
+        vertex, face, texture = vft
+        # to numpy and cv2
+        vertex = vertex.cpu().detach().numpy()
+        face = face.cpu().detach().numpy()
+        
+        naked_path = osp.join(root, name_card['t-naked'], name + ".obj")       
+        save_mesh(naked_path, vertex, face, texture=to_pil_image(texture / 255.),
+                  uvcoords=uvcoord, uvfaces=uvface)
+    

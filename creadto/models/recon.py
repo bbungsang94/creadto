@@ -65,14 +65,14 @@ class BLASS:
         self.body_regressor = self.body_regressor.eval()
         
     def _encode(self, x, joint_info):
-        import cv2
         images = []
         for stub, joint in zip(x, joint_info):
             center = joint['center']
             center[0] = int(center[0])
             center[1] = int(center[1])
+            stub = np.array(stub)
             cropped, _ = self.transformer['crop'](stub, scale=2.3, center=center)
-            normalized = self.transformer['normalize'](cv2.cvtColor(cropped, cv2.COLOR_BGR2RGB) / 255.)
+            normalized = self.transformer['normalize'](cropped / 255.)
             images.append(normalized)
         return torch.stack(images, dim=0)
     
@@ -131,11 +131,11 @@ class BLASS:
         
     def __call__(self, x):
         result = dict()
-        batch_size = x.shape[0]
         result['joint_info'] = self.joint_estimator(x)
         result['body_images'] = self._encode(x, result['joint_info'])
         result['shape_parameters'] = self._to_param(result['body_images'])
         result['vertex'], result['3d_joint'] = self.body_decoder(**result['shape_parameters'])
+        batch_size = result['vertex'].shape[0]
         pose = torch.zeros(batch_size, 55, 3, dtype=torch.float32)
         # pose[:, 16, 2] = -np.pi / 8.
         # pose[:, 17, 2] = np.pi / 8.
@@ -145,7 +145,6 @@ class BLASS:
         result['face'] = self.body_decoder.faces
         result['scale'] = result['shape_parameters']['offset'][:, 0].view(-1, 1)
         result['translation'] = result['shape_parameters']['offset'][:, 1:3]
-        result['overlay_image'] = np.transpose(np.array(x), [0, 3, 1, 2])
         result['cam_param'] = self.set_render_parameters(result['joint_info'],
                                                          result['translation'],
                                                          result['scale'])

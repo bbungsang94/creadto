@@ -51,12 +51,14 @@ class TokenPoseLandmarker:
             'det_cat_id': args.det_cat_id,
             'bbox_thr': args.bbox_thr
         }
+        self.device = torch.device(device)
 
     def __call__(self, images=None, filenames=None):
         if images is None:
             images = filenames
         result = []
         for image in images:
+            image = np.array(image)
             # test a single image, the resulting box is (x1, y1, x2, y2)
             det_boxes = self.func['det'](self.models['det'], image)
             # keep the person class bounding boxes.
@@ -84,14 +86,14 @@ class TokenPoseLandmarker:
 
 
 class GenderClassification:
-    def __init__(self):
+    def __init__(self, device="cuda:0"):
         from transformers import AutoImageProcessor, AutoModelForImageClassification
         self.label = ['female', 'male']
         self.encoder = AutoImageProcessor.from_pretrained("rizvandwiki/gender-classification")
         self.model = AutoModelForImageClassification.from_pretrained("rizvandwiki/gender-classification")
 
     def __call__(self, x):
-        o = self.model(x)
+        o = self.model(x.cpu())
         output = [self.label[torch.argmax(i)] for i in o.logits]
         return output
 

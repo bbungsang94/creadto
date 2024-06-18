@@ -73,6 +73,8 @@ class ModelConcatenator:
             o3d.visualization.draw_geometries([mesh])
         return self.human
 
+    def upscale_head(self):
+        pass
 
 class Tailor:
     def __init__(self, tape, pin, circ_dict, norm_range, model_dict=None):

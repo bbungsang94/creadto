@@ -49,14 +49,14 @@ if __name__ == "__main__":
     
     if platform.system().lower() == "linux":
         os.environ['QT_QPA_PLATFORM'] = 'offscreen'
-        global_root = "/workspace/sample"
+        global_root = "/workspace/cache"
     else:
-        global_root = "D:\dump\sample"
+        global_root = "D:\dump\cache"
     # os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
     # os.environ["CUDA_VISIBLE_DEVICES"] = "0"
     # os.environ["TORCH_USE_CUDA_DSA"] = '1'
     
-    from example.run_hlamp import procedure
+    from example.run_texture import procedure
     procedure(global_root)
     
     # extract_shadow()
