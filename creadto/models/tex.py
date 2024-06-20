@@ -26,7 +26,7 @@ class PaintHuman:
         self.masks = {
             'iris': load_image(osp.join(mask_root, "weighted_green_mask.png"), mono=True, integer=False),
             'lips': load_image(osp.join(mask_root, "weighted_red_mask.png"), mono=True, integer=False),
-            'eyelid': load_image(osp.join(mask_root, "eyelid.jpg"), mono=True, integer=False)
+            'eyelid': load_image(osp.join(mask_root, "face.jpg"), mono=True, integer=False)
             
         }
     def __call__(self, images: List[Image]):
@@ -47,10 +47,12 @@ class PaintHuman:
         # displace eyelid
         head_albedos = self.decouple_head_albedo(colored_albedos)
         head_images = head_images  / 255.
+        # extract head features
         result = self.flaep.decode(head_images, external_tex=head_albedos / 255., external_img=skin_dict['enhanced_images'] / 255.)
-        landmarks2d = result['visualize']['landmarks2d'] * result['visualize']['inputs'].shape[-1]
         up_sample = transforms.Compose([transforms.Resize((512, 512))])
         head_albedos = up_sample(head_albedos)
+        
+        # map to body from head
         body_eyelid_mask = self.to_body_texture(self.masks['eyelid'].to(head_albedos.device)[None, :])[0]
         face_albedos = self.to_body_texture(up_sample(result["uv_texture_gt"]) * 255.)
         pack = zip(colored_albedos, face_albedos)
@@ -58,6 +60,9 @@ class PaintHuman:
             full_albedo, face_albedo = tup
             colored_albedos[i] = copy.deepcopy((1. - body_eyelid_mask) * full_albedo + body_eyelid_mask * face_albedo)
         # fetch eyebrow
+        
+        # additional information
+        landmarks2d = result['visualize']['landmarks2d'] * result['visualize']['inputs'].shape[-1]
         
         vis_dict = {
             'segmented_images': skin_dict['segmented_images'] / 255.,
