@@ -662,11 +662,6 @@ def run_paint_cycle(root: str = r"D:\dump\sample\head_images",
     pass
 # endregion
 
-def dump():
-    from creadto.
-    root = r"eyebrow_mask.png"
-    
-
 
 if __name__ == "__main__":
     # merge_mask()
@@ -675,8 +670,8 @@ if __name__ == "__main__":
     # map_body_texture(r"D:\Creadto\CreadtoLibrary\output\only_face.jpg", r"D:\Creadto\CreadtoLibrary\output\inference_mask.jpg")
     # merge_face_default(face_path=r"D:\dump\temp\result_head-0th.png", mask_root=r"D:\Creadto\CreadtoLibrary\creadto-model\flame\mask_images")
     # map_body_texture(face_texture_path=r"./merged_image.png", mask_path=r"D:\Creadto\CreadtoLibrary\creadto-model\flame\mask_images\inference_mask.jpg")
-    # modify_skin_color(target_image=r"creadto-model\textures\MSTScale\Samples\mono_body-masks.png",
-    #                   skin_mask_path=r"creadto-model\flame\mask_images\mono-body-mask.png")
+    modify_skin_color(target_image=r"creadto-model\textures\MSTScale\Samples\mono_body_8k.png",
+                      skin_mask_path=r"creadto-model\flame\mask_images\mono-body-mask.png")
     # run_full_cycle(root=r"D:/dump/sample")
     # run_cut_only_head_image()
     #dummy()
