@@ -55,6 +55,8 @@ def procedure(root):
         'i-face-enhanced': 'image-face-enhanced',
         'i-face-parsing': 'image-face-parsing',
         'i-skin-filtered': 'image-skin-filtered',
+        'i-albedo-mask': 'image-albedo-mask',
+        'i-albedo-mask-d': 'image-albedo-mask-detail',
         'p-head-landmark': 'parameter-face-landmark',
         't-naked': 'texture-naked',
     }
@@ -74,7 +76,8 @@ def procedure(root):
         name_card['i-head-albedo']: tex_dict['head_albedos'],
         name_card['i-face-parsing']: tex_dict['segmented_images'],
         name_card['i-face-enhanced']: tex_dict['enhanced_images'],
-        name_card['i-skin-filtered']: tex_dict['filtered_images']
+        name_card['i-skin-filtered']: tex_dict['filtered_images'],
+        name_card['i-albedo-mask']: tex_dict['uv_mask']
     }
     for i, name in enumerate(names):
         v, f = models[name]
@@ -87,7 +90,17 @@ def procedure(root):
 
         landmarks2d = tex_dict['landmarks2d'][i].cpu().detach().numpy()
         np.save(osp.join(root, name_card['p-head-landmark'], name + ".npy"), landmarks2d)
-        
+    
+    for key, value in tex_dict['face_masks'].items():
+        folder_path = osp.join(root, name_card['i-albedo-mask-d'], key)
+        if osp.exists(folder_path):
+            shutil.rmtree(folder_path)
+        os.mkdir(folder_path)
+        for i, mask in enumerate(value):
+            pil_image = torchvision.transforms.functional.to_pil_image(mask)
+            image_path = osp.join(folder_path, names[i] + ".png") 
+            pil_image.save(image_path)
+    
     uvcoord = uvcoords.cpu().detach().numpy()
     uvface = uvfaces.cpu().detach().numpy()
     for name, vft in models.items():

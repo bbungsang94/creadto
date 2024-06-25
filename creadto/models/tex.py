@@ -3,6 +3,7 @@ import facer
 from typing import Dict, List, Tuple
 from PIL.Image import Image
 import torch
+import torch.nn.functional as F
 import numpy as np
 import os.path as osp
 from torchvision import transforms
@@ -27,17 +28,21 @@ class PaintHuman:
             'iris': load_image(osp.join(mask_root, "weighted_green_mask.png"), mono=True, integer=False),
             'lips': load_image(osp.join(mask_root, "weighted_red_mask.png"), mono=True, integer=False),
             'eyelid': load_image(osp.join(mask_root, "face.jpg"), mono=True, integer=False)
-            
         }
+        self.categories = {"background": 0, "neck": 1, "skin": 2, "cloth": 3, 
+                           "left_ear": 4, "right_ear": 5, "left_eyebrow": 6, "right_eyebrow": 7,
+                           "left_eye": 8, "right_eye": 9, "nose": 10, "mouth": 11,
+                           "lower_lip": 12, "upper_lip": 13, "hair": 14, "sunglasses": 15,
+                           "hat": 16, "earring": 17, "necklace": 18}
     def __call__(self, images: List[Image]):
         # extract head images
         head_images, process = self.flaep.encode_pil(images)
         # face parsing
         head_images = head_images * 255.
-        eye_dict = self.get_parts_colour(head_images, ['left_eye', 'right_eye'], min_thrd=20)
-        lip_dict = self.get_parts_colour(head_images, ['lower_lip', 'upper_lip'], min_thrd=40, max_thrd=255)
-        eyebrow_dict = self.get_parts_colour(head_images, ['left_eyebrow', 'right_eyebrow'], max_thrd=255)
-        skin_dict = self.get_parts_colour(head_images, ['skin', 'nose'], max_thrd=255)
+        eye_dict = self.get_parts_colour(head_images, [self.categories['left_eye'], self.categories['right_eye']], min_thrd=20)
+        lip_dict = self.get_parts_colour(head_images, [self.categories['lower_lip'], self.categories['upper_lip']], min_thrd=40, max_thrd=255)
+        eyebrow_dict = self.get_parts_colour(head_images, [self.categories['left_eyebrow'], self.categories['right_eyebrow']], max_thrd=255)
+        skin_dict = self.get_parts_colour(head_images, [self.categories['skin'], self.categories['nose']], max_thrd=255)
         # paint skin
         colored_albedos = self.paint_skin(skin_dict['mean_values'])
         # paint iris
@@ -50,15 +55,22 @@ class PaintHuman:
         # extract head features
         result = self.flaep.decode(head_images, external_tex=head_albedos / 255., external_img=skin_dict['enhanced_images'] / 255.)
         up_sample = transforms.Compose([transforms.Resize((512, 512))])
-        head_albedos = up_sample(head_albedos)
+        # dynamic masking from albedo image
+        segmented_masks = skin_dict['segmented_masks']
+        uv_grid = result['uv_grid']
+        albedo_mask = {}
+        uv_batch_mask = torch.zeros_like(result["uv_texture_gt"])
+        for part_name in ['skin', 'lower_lip', 'upper_lip', 'mouth', 'nose', 'left_eyebrow', 'right_eyebrow']:
+            batch_mask = segmented_masks[:, self.categories[part_name]]
+            batch_mask = torch.stack([batch_mask, batch_mask, batch_mask], dim=1)
+            partial_mask = F.grid_sample(batch_mask, uv_grid, mode='bilinear', align_corners=False)
+            albedo_mask[part_name] = partial_mask
+            uv_batch_mask = torch.clamp(uv_batch_mask + partial_mask, 0., 1.)
         
         # map to body from head
-        body_eyelid_mask = self.to_body_texture(self.masks['eyelid'].to(head_albedos.device)[None, :])[0]
+        uv_batch_mask = self.to_body_texture(up_sample(uv_batch_mask).to(head_albedos.device))
         face_albedos = self.to_body_texture(up_sample(result["uv_texture_gt"]) * 255.)
-        pack = zip(colored_albedos, face_albedos)
-        for i, tup in enumerate(pack):
-            full_albedo, face_albedo = tup
-            colored_albedos[i] = copy.deepcopy((1. - body_eyelid_mask) * full_albedo + body_eyelid_mask * face_albedo)
+        colored_albedos = (1. - uv_batch_mask) * colored_albedos + uv_batch_mask * face_albedos
         # fetch eyebrow
         
         # additional information
@@ -72,12 +84,14 @@ class PaintHuman:
             'face_detection': process,
             'head_albedos': torch.clamp(up_sample(result["uv_texture_gt"]), 0., 1.),
             'full_albedos': colored_albedos,
-            'landmarks2d': landmarks2d
+            'landmarks2d': landmarks2d,
+            'uv_mask': uv_batch_mask,
+            'face_masks': albedo_mask
         }
         
         return vis_dict
 
-    def get_parts_colour(self, images: torch.Tensor, parts: List[str], min_thrd = 5, max_thrd = 170) -> Dict[str, object]:
+    def get_parts_colour(self, images: torch.Tensor, parts: List[int], min_thrd = 5, max_thrd = 170) -> Dict[str, object]:
         """From head image (b, 3, 224, 224), extract eye(iris) colour without sclera.
 
         Args:
@@ -90,12 +104,6 @@ class PaintHuman:
         """
         
         device = self.body_albedo.device
-        # define categories of face parser
-        categories = {"background": 0, "neck": 1, "skin": 2, "cloth": 3,
-                    "left_ear": 4, "right_ear": 5, "left_eyebrow": 6, "right_eyebrow": 7,
-                    "left_eye": 8, "right_eye": 9, "nose": 10, "mouth": 11,
-                    "lower_lip": 12, "upper_lip": 13, "hair": 14, "sunglasses": 15,
-                    "hat": 16, "earring": 17, "necklace": 18}
         
         # Need refactoring part!, we can get processed arguments
         with torch.inference_mode():
@@ -107,7 +115,7 @@ class PaintHuman:
         
         masks = torch.zeros((seg_probs[:, 0].shape), device=seg_probs.device, dtype=seg_probs.dtype)
         for part in parts:
-            masks += seg_probs[:, categories[part]]
+            masks += seg_probs[:, part]
         mean_values = []
         enhanced_images = []
         filtered_images = []
@@ -143,6 +151,7 @@ class PaintHuman:
             mean_values.append(mean_value)
 
         return {
+            'segmented_masks': seg_probs,
             'segmented_images': vis_images,
             'enhanced_images': torch.stack(enhanced_images),
             'filtered_images': torch.stack(filtered_images),
