@@ -670,11 +670,11 @@ if __name__ == "__main__":
     # map_body_texture(r"D:\Creadto\CreadtoLibrary\output\only_face.jpg", r"D:\Creadto\CreadtoLibrary\output\inference_mask.jpg")
     # merge_face_default(face_path=r"D:\dump\temp\result_head-0th.png", mask_root=r"D:\Creadto\CreadtoLibrary\creadto-model\flame\mask_images")
     # map_body_texture(face_texture_path=r"./merged_image.png", mask_path=r"D:\Creadto\CreadtoLibrary\creadto-model\flame\mask_images\inference_mask.jpg")
-    modify_skin_color(target_image=r"creadto-model\textures\MSTScale\Samples\mono_body_8k.png",
-                      skin_mask_path=r"creadto-model\flame\mask_images\mono-body-mask.png")
+    modify_skin_color(target_image=r"creadto-model\template\high-texture-raw\white\white_m_8k-ete.png",
+                      skin_mask_path=r"creadto-model\template\high-texture-raw\white\8k-mask.png")
     # run_full_cycle(root=r"D:/dump/sample")
     # run_cut_only_head_image()
     #dummy()
     #enhance_face_skin()
-    run_paint_cycle()
+    # run_paint_cycle()
     # make_weighted_masks()
