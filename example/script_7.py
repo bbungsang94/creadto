@@ -1,6 +1,6 @@
 import os.path as osp
 
-root = r"D:\Creadto\CreadtoLibrary\creadto-model\template\high-texture-raw"
+root = r"/workspace/cache/template/high-texture-raw"
 filename = "high-resolution-human.obj"
 
 from creadto.utils.io import load_mesh
@@ -32,7 +32,7 @@ cv2.imwrite('backboard.png', backboard)
 # Filtering Section
 import torch
 from creadto.utils.math import is_in_polygon
-texture_root = r"D:\Creadto\CreadtoLibrary\creadto-model\template\high-texture-raw\white"
+texture_root = "workspace/cache/template/high-texture-raw/white"
 image_file = "temp_white_8k.png"
 
 texture_image = cv2.imread(osp.join(texture_root, image_file), cv2.IMREAD_COLOR)
