@@ -442,13 +442,22 @@ def make_weighted_masks(mono_body_albedo_path=r"D:\Creadto\CreadtoLibrary\creadt
     body_albedo = cv2.imread(mono_body_albedo_path)
     body_albedo = body_albedo.astype(np.float32)
     green_channel = copy.deepcopy(body_albedo[:, :, 1])
-    green_channel = green_channel - ((body_albedo[:, :, 0] + body_albedo[:, :, 2]) / 2.)
+    cv2.imwrite("green_mask.png", green_channel)
+    green_channel = np.clip(green_channel - ((body_albedo[:, :, 0] + body_albedo[:, :, 2]) / 2.), 0.0, 255.0)
+    green_channel = (green_channel - green_channel.min()) / (green_channel.max() - green_channel.min()) * 255.
     cv2.imwrite("weighted_green_mask.png", green_channel)
     
+    blue_channel = copy.deepcopy(body_albedo[:, :, 0])
+    cv2.imwrite("blue_mask.png", blue_channel)
+    blue_channel = np.clip(blue_channel - ((body_albedo[:, :, 1] + body_albedo[:, :, 2]) / 2.), 0.0, 255.0)
+    blue_channel = (blue_channel - blue_channel.min()) / (blue_channel.max() - blue_channel.min()) * 255.
+    cv2.imwrite("weighted_blue_mask.png", blue_channel)
+    
     red_channel = copy.deepcopy(body_albedo[:, :, -1])
-    red_channel = red_channel - ((body_albedo[:, :, 0] + body_albedo[:, :, 1]) / 2.)
+    cv2.imwrite("red_mask.png", red_channel)
+    red_channel = np.clip(red_channel - ((body_albedo[:, :, 0] + body_albedo[:, :, 1]) / 2.), 0.0, 255.0)
+    red_channel = (red_channel - red_channel.min()) / (red_channel.max() - red_channel.min()) * 255.
     cv2.imwrite("weighted_red_mask.png", red_channel)
-    pass
 
 def extract_sclera(head_image_paths=r"D:\dump\sample\head_images"):
     import facer
@@ -670,11 +679,11 @@ if __name__ == "__main__":
     # map_body_texture(r"D:\Creadto\CreadtoLibrary\output\only_face.jpg", r"D:\Creadto\CreadtoLibrary\output\inference_mask.jpg")
     # merge_face_default(face_path=r"D:\dump\temp\result_head-0th.png", mask_root=r"D:\Creadto\CreadtoLibrary\creadto-model\flame\mask_images")
     # map_body_texture(face_texture_path=r"./merged_image.png", mask_path=r"D:\Creadto\CreadtoLibrary\creadto-model\flame\mask_images\inference_mask.jpg")
-    modify_skin_color(target_image=r"creadto-model\template\high-texture-raw\white\white_m_8k-ete.png",
+    modify_skin_color(target_image=r"creadto-model\template\high-texture-raw\white\white_m_8k.png",
                       skin_mask_path=r"creadto-model\template\high-texture-raw\white\8k-mask.png")
     # run_full_cycle(root=r"D:/dump/sample")
     # run_cut_only_head_image()
     #dummy()
     #enhance_face_skin()
     # run_paint_cycle()
-    # make_weighted_masks()
+    make_weighted_masks(r"D:\Creadto\CreadtoLibrary\creadto-model\template\high-texture-raw\white\white_m_8k.png")
