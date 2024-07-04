@@ -21,12 +21,16 @@ class PaintHuman:
                                              model_path=osp.join(model_root, "face_parsing.farl.celebm.main_ema_181500_jit.pt")) # optional "farl/lapa/448"
         self.bridge = np.load(osp.join(model_root, "flame", "flame2smplx_tex_1024.npy"), allow_pickle=True, encoding = 'latin1').item()
         
-        mask_root = osp.join(model_root, "textures", "MSTScale", "Samples")
-        self.body_albedo = load_image(osp.join(mask_root, "mono_body-masks.png"))[0]
+        albedo_root = osp.join(model_root, "template", "high-texture-raw", "white")
+        mask_root = osp.join(model_root, "template", "high-texture-raw", "masks")
+        resize = transforms.Resize((1024, 1024))
+        self.body_albedo = resize(load_image(osp.join(albedo_root, "white_m_8k_raw.png"))[0])
         self.body_albedo = self.body_albedo.type(torch.FloatTensor).to(device)
+        self.normal_map = resize(load_image(osp.join(albedo_root, "white_m_8k_normal.png"))[0])
         self.masks = {
-            'iris': load_image(osp.join(mask_root, "weighted_green_mask.png"), mono=True, integer=False),
-            'lips': load_image(osp.join(mask_root, "weighted_red_mask.png"), mono=True, integer=False),
+            #'iris': resize(load_image(osp.join(mask_root, "weighted_blue_mask.png"), mono=True, integer=False)),
+            'iris': torch.zeros_like(self.body_albedo),
+            'lips': torch.zeros_like(self.body_albedo),
             'eyelid': load_image(osp.join(mask_root, "face.jpg"), mono=True, integer=False)
         }
         self.categories = {"background": 0, "neck": 1, "skin": 2, "cloth": 3, 
@@ -45,10 +49,7 @@ class PaintHuman:
         skin_dict = self.get_parts_colour(head_images, [self.categories['skin'], self.categories['nose']], max_thrd=255)
         # paint skin
         colored_albedos = self.paint_skin(skin_dict['mean_values'])
-        # paint iris
-        colored_albedos = self.paint_with_mask(colored_albedos, self.masks['iris'], eye_dict['mean_values'])
-        # paint lips
-        colored_albedos = self.paint_with_mask(colored_albedos, self.masks['lips'], lip_dict['mean_values'])
+        colored_albedos_raw = colored_albedos.detach()
         # displace eyelid
         head_albedos = self.decouple_head_albedo(colored_albedos)
         head_images = head_images  / 255.
@@ -60,18 +61,39 @@ class PaintHuman:
         uv_grid = result['uv_grid']
         albedo_mask = {}
         uv_batch_mask = torch.zeros_like(result["uv_texture_gt"])
-        for part_name in ['skin', 'lower_lip', 'upper_lip', 'mouth', 'nose', 'left_eyebrow', 'right_eyebrow']:
+        for part_name in ['lower_lip', 'upper_lip', 'mouth', 'left_eyebrow', 'right_eyebrow']:
             batch_mask = segmented_masks[:, self.categories[part_name]]
             batch_mask = torch.stack([batch_mask, batch_mask, batch_mask], dim=1)
             partial_mask = F.grid_sample(batch_mask, uv_grid, mode='bilinear', align_corners=False)
             albedo_mask[part_name] = partial_mask
             uv_batch_mask = torch.clamp(uv_batch_mask + partial_mask, 0., 1.)
         
+        # without eye part
+        eye_demask = 1. - torch.clamp(self.masks['iris'], 0., 1.)
+        eye_demask = eye_demask.to(head_albedos.device)
         # map to body from head
-        uv_batch_mask = self.to_body_texture(up_sample(uv_batch_mask).to(head_albedos.device))
+        uv_batch_mask = self.to_body_texture(up_sample(uv_batch_mask).to(head_albedos.device)) * eye_demask
         face_albedos = self.to_body_texture(up_sample(result["uv_texture_gt"]) * 255.)
         colored_albedos = (1. - uv_batch_mask) * colored_albedos + uv_batch_mask * face_albedos
-        # fetch eyebrow
+        # paint iris
+        colored_albedos = self.paint_with_mask(colored_albedos, self.masks['iris'], eye_dict['mean_values'])
+        # paint lips
+        colored_albedos = self.paint_with_mask(colored_albedos, self.masks['lips'], lip_dict['mean_values'])
+        
+        # make normal_map
+        head_normal_map = (result['uv_detail_normals_neg'] + 1.) / 2.
+        body_normal_map = self.normal_map.unsqueeze(dim=0).repeat(head_normal_map.shape[0], 1, 1, 1) / 255.
+        body_normal_map = body_normal_map.to(head_normal_map.device)
+        normal_mask = torch.zeros_like(result["uv_texture_gt"])
+        for part_name in ['lower_lip', 'upper_lip', 'mouth', 'left_eyebrow', 'right_eyebrow', 'skin', 'nose']:
+            batch_mask = segmented_masks[:, self.categories[part_name]]
+            batch_mask = torch.stack([batch_mask, batch_mask, batch_mask], dim=1)
+            partial_mask = F.grid_sample(batch_mask, uv_grid, mode='bilinear', align_corners=False)
+            normal_mask = torch.clamp(normal_mask + partial_mask, 0., 1.)
+        # map to body from head
+        normal_mask = self.to_body_texture(up_sample(normal_mask).to(head_albedos.device))
+        head_normal_map = self.to_body_texture(up_sample(head_normal_map))
+        body_normal_map = (1. - normal_mask) * body_normal_map + normal_mask * head_normal_map
         
         # additional information
         landmarks2d = result['visualize']['landmarks2d'] * result['visualize']['inputs'].shape[-1]
@@ -83,7 +105,11 @@ class PaintHuman:
             'head_images': head_images,
             'face_detection': process,
             'head_albedos': torch.clamp(up_sample(result["uv_texture_gt"]), 0., 1.),
+            'head_normal_map': head_normal_map,
+            'normal_map': body_normal_map,
+            'head_albedos_raw': head_albedos / 255.,
             'full_albedos': colored_albedos,
+            'full_albedos_raw': colored_albedos_raw / 255.,
             'landmarks2d': landmarks2d,
             'uv_mask': uv_batch_mask,
             'face_masks': albedo_mask
@@ -163,7 +189,7 @@ class PaintHuman:
         rgbs = rgbs.to(self.body_albedo.device)
         for rgb in rgbs:
             albedo = copy.deepcopy(self.body_albedo)
-            diff = rgb - torch.tensor([205., 205., 205.]).to(rgb.device)
+            diff = rgb - torch.tensor([205., 188., 178.,]).to(rgb.device)
             painted = torch.clamp(albedo + diff.view(-1, 1, 1), 0, 255)
             converted.append(painted)
         return torch.stack(converted)

@@ -5,6 +5,7 @@ import cv2
 import torch
 import torchvision
 import numpy as np
+import pandas as pd
 from PIL import Image
 
 
@@ -63,7 +64,7 @@ def body_to_measure(vertices, gender):
         bodies[pose] = v.detach().clone()
 
     tailor.update(bodies)
-    return tailor.order(gender=gender, visualize=False, normalize=False)
+    return tailor.order(gender=gender, visualize=False, normalize=False), tailor.tape
 
 
 def head_to_measure(vertices):
@@ -77,7 +78,7 @@ def head_to_measure(vertices):
     bodies = {'standard': vertices.detach().clone()}
 
     tailor.update(bodies)
-    return tailor.order(gender=["female"] * vertices.shape[0], visualize=False, normalize=False)
+    return tailor.order(gender=["female"] * vertices.shape[0], visualize=False, normalize=False), tailor.tape
 
 
 def procedure(root):
@@ -107,14 +108,24 @@ def procedure(root):
     face_model = image_to_flaep(root=osp.join(root, name_card['in-image']))
     gender = image_to_gender(images=face_model['crop_image'])
     body_model = image_to_blass(root=osp.join(root, name_card['in-image']))
-    body_measurement = body_to_measure(body_model['plane_vertex'], gender)
-    face_measurement = head_to_measure(face_model['plane_verts'])
+    body_measurement, body_titles = body_to_measure(body_model['plane_vertex'], gender)
+    face_measurement, head_titles= head_to_measure(face_model['plane_verts'])
     humans = concatenator.update_model(body=body_model['plane_vertex'], head=face_model['plane_verts'], visualize=False)
+    full_titles_kor = [x[0] for x in body_titles] + [x[0] for x in head_titles]
     
     for i, pose in enumerate(body_model['shape_parameters']['pose']):
         filename = face_model['names'][i].split('.')[0] + ".pth"
         filename = filename.replace(name_card['in-image'], name_card['p-body-pose'])
         torch.save(pose, filename)
+        
+        measure_filename = face_model['names'][i].split('.')[0] + ".csv"
+        measure_filename = measure_filename.replace(name_card['in-image'], name_card['u-measurement'])
+        body_measure = body_measurement[i]
+        head_measure = face_measurement[i]
+        full_measure = torch.concat([body_measure, head_measure])
+
+        dataframe = pd.DataFrame(full_measure.unsqueeze(dim=0).cpu().detach().numpy(), columns=full_titles_kor)
+        dataframe.to_csv(measure_filename, encoding="cp949")
     
     pack = zip(face_model['dense_verts'], face_model['dense_faces'], face_model['dense_colors'])
     for i, tup in enumerate(pack):

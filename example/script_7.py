@@ -4,10 +4,10 @@ import os
 if platform.system().lower() == "linux":
     os.environ['QT_QPA_PLATFORM'] = 'offscreen'
     root = r"/workspace/cache/template/high-texture-raw"
-    texture_root = "/workspace/cache/template/high-texture-raw/white"
+    texture_root = "/workspace/cache/template/high-texture-raw/black"
 else:
     root = r"/workspace/cache/template/high-texture-raw"
-    texture_root = "/workspace/cache/template/high-texture-raw/white"
+    texture_root = "/workspace/cache/template/high-texture-raw/black"
         
 import os.path as osp
 
@@ -43,7 +43,7 @@ cv2.imwrite('backboard.png', backboard)
 # Filtering Section
 import torch
 from creadto.utils.math import is_in_polygon
-image_file = "temp_white_8k.png"
+image_file = "male-black-template-8k.png"
 
 texture_image = cv2.imread(osp.join(texture_root, image_file), cv2.IMREAD_COLOR)
 import glob
@@ -78,7 +78,7 @@ for i, face in enumerate(pbar):
         for y in y_range:
             value = backboard[y, x, :]
             point = (x / width, y / height)
-            if is_in_polygon(vertex, point):
+            if is_in_polygon(vertex, point, bypass_in_box=True):
                 backboard[y, x, :] = texture_image[y, x, :]
     if i % save_interval == 0:
         cv2.imwrite('./dump/backboard-%d.png' % i, backboard)
