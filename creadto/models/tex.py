@@ -38,6 +38,8 @@ class PaintHuman:
                            "left_eye": 8, "right_eye": 9, "nose": 10, "mouth": 11,
                            "lower_lip": 12, "upper_lip": 13, "hair": 14, "sunglasses": 15,
                            "hat": 16, "earring": 17, "necklace": 18}
+        
+        
     def __call__(self, images: List[Image]):
         # extract head images
         head_images, process = self.flaep.encode_pil(images)
@@ -81,7 +83,7 @@ class PaintHuman:
         colored_albedos = self.paint_with_mask(colored_albedos, self.masks['lips'], lip_dict['mean_values'])
         
         # make normal_map
-        head_normal_map = (result['uv_detail_normals_neg'] + 1.) / 2.
+        head_normal_map = result['uv_detail_normals_pos']
         body_normal_map = self.normal_map.unsqueeze(dim=0).repeat(head_normal_map.shape[0], 1, 1, 1) / 255.
         body_normal_map = body_normal_map.to(head_normal_map.device)
         normal_mask = torch.zeros_like(result["uv_texture_gt"])

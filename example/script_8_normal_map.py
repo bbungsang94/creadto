@@ -21,7 +21,7 @@ def compute_normal_map(image_path, scale=1.0, bias=0.5):
     # b g r to r g b
     normal_map[..., 2] = sobel_x
     normal_map[..., 1] = sobel_y
-    normal_map[..., 0] = 1.0 / scale_factor
+    normal_map[..., 0] = 1.0 / scale
     
     # 노멀라이즈
     norm = np.sqrt(np.sum(normal_map ** 2, axis=2, keepdims=True))
@@ -33,15 +33,17 @@ def compute_normal_map(image_path, scale=1.0, bias=0.5):
     
     return normal_map.astype(np.uint8)
 
-# 이미지 경로 설정
-image_path = r'D:\Creadto\CreadtoLibrary\creadto-model\template\high-texture-raw\white\white_m_8k_raw.png'
-n_split = 10
-min_scale_factor = 0.0
-max_scale_factor = 2.0
-for itr in tqdm(range(1, n_split + 1)):
-    scale_factor = min_scale_factor + (itr / n_split) * max_scale_factor
-    # normal map 생성
-    normal_map = compute_normal_map(image_path, scale=scale_factor, bias=0.9)
 
-    # 결과 저장
-    cv2.imwrite('./dump/normal_map_%08d.png' % int(scale_factor * n_split), normal_map)
+if __name__ == "__main__":
+    # 이미지 경로 설정
+    image_path = r'D:\Creadto\CreadtoLibrary\creadto-model\template\high-texture-raw\white\white_m_8k_raw.png'
+    n_split = 10
+    min_scale_factor = 0.0
+    max_scale_factor = 2.0
+    for itr in tqdm(range(1, n_split + 1)):
+        scale_factor = min_scale_factor + (itr / n_split) * max_scale_factor
+        # normal map 생성
+        normal_map = compute_normal_map(image_path, scale=scale_factor, bias=0.9)
+
+        # 결과 저장
+        cv2.imwrite('./dump/normal_map_%08d.png' % int(scale_factor * n_split), normal_map)
