@@ -31,7 +31,7 @@ class BLASS:
         # Processor
         mlp_module = MLP(input_dim=2193, output_dim=145)
         self.body_regressor = IterativeRegression(module=mlp_module)
-        self.body_decoder = SMPL("./creadto-model")
+        self.body_decoder = SMPL("./creadto-model/template")
         #   image to face
         # Postprocessor
         #   Tailor(body and head)
