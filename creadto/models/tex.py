@@ -63,7 +63,7 @@ class PaintHuman:
         uv_grid = result['uv_grid']
         albedo_mask = {}
         uv_batch_mask = torch.zeros_like(result["uv_texture_gt"])
-        for part_name in ['lower_lip', 'upper_lip', 'mouth', 'left_eyebrow', 'right_eyebrow']:
+        for part_name in ['lower_lip', 'upper_lip', 'mouth', 'left_eyebrow', 'right_eyebrow', 'skin']:
             batch_mask = segmented_masks[:, self.categories[part_name]]
             batch_mask = torch.stack([batch_mask, batch_mask, batch_mask], dim=1)
             partial_mask = F.grid_sample(batch_mask, uv_grid, mode='bilinear', align_corners=False)

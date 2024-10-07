@@ -131,7 +131,6 @@ def save_mesh(obj_name,
     texture_name = obj_name.replace('.obj', '.png')
     material_name = 'FaceTexture'
 
-    faces = faces.copy()
     # mesh lab start with 1, python/c++ start from 0
     faces += 1
     if inverse_face_order:

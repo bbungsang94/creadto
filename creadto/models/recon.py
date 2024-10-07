@@ -224,7 +224,11 @@ class DetailFaceModel:
             image = image.transpose(2, 0, 1)
             crop_images.append(torch.tensor(image, dtype=torch.float32))
             process.append(True)
-        return torch.stack(crop_images, dim=0).to(self.device), process
+        
+        output = None
+        if True in process:
+            output = torch.stack(crop_images, dim=0).to(self.device)
+        return output, process
     
     def decode(self, images: torch.Tensor, external_tex=None, external_img=None):
         with torch.no_grad():
