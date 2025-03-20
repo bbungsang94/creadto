@@ -726,7 +726,7 @@ if __name__ == "__main__":
     gap = global_point - local_point
     global_coordinates = local_coordinates + gap
     
-    file_path = r"D:\Creadto\CreadtoLibrary\creadto-model\template\naked_body.obj"
+    file_path = r"D:\Creadto\CreadtoLibrary\creadto-model\smplx\naked_body.obj"
     from creadto.utils.io import load_mesh
     vertex, face, _, _ = load_mesh(file_path)
     

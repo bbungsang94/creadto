@@ -7,7 +7,6 @@ import torch
 import numpy as np
 from torchvision.transforms import transforms
 
-
 class TokenPoseLandmarker:
     def __init__(self, device="cuda:0"):
         from easydict import EasyDict
@@ -17,10 +16,10 @@ class TokenPoseLandmarker:
         from mmpose.datasets import DatasetInfo
 
         args = {
-            'det_config': "./creadto-model/cascade_rcnn_x101_64x4d_fpn_coco.py",
-            'det_checkpoint': "./creadto-model/cascade_rcnn_x101_64x4d_fpn_20e_coco_20200509_224357-051557b1.pth",
-            'pose_config': "./creadto-model/pct_large_classifier.py",
-            'pose_checkpoint': "./creadto-model/swin_large.pth",
+            'det_config': "./creadto-model/cascade/cascade_rcnn_x101_64x4d_fpn_coco.py",
+            'det_checkpoint': "./creadto-model/cascade/cascade_rcnn_x101_64x4d_fpn_20e_coco.pth",
+            'pose_config': "./creadto-model/classification/pct/pct_large_classifier.py",
+            'pose_checkpoint': "./creadto-model/depth/swin/swin_large.pth",
             'det_cat_id': 1,
             'thickness': 2,
             'bbox_thr': 0.3,

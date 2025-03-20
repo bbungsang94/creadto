@@ -1,4 +1,4 @@
-_base_ = ['./coco.py']
+_base_ = ['./depth/swin-coco.py']
 log_level = 'INFO'
 load_from = None
 resume_from = None
@@ -61,7 +61,7 @@ data_cfg = dict(
 # model settings
 model = dict(
     type='PCT',
-    pretrained='weights/heatmap/swin_large.pth',
+    pretrained='weights/heatmap/depth/swin/swin_large.pth',
     backbone=dict(
         type='SwinV2TransformerRPE2FC',
         embed_dim=192,

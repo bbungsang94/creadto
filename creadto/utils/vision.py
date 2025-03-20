@@ -1,4 +1,5 @@
 import torch
+import torch.nn.functional as F
 import numpy as np
 from PIL.Image import Image
 import cv2
@@ -87,3 +88,73 @@ def compute_normal_map(images: np.ndarray, scale: float=1.0, bias: float=0.5):
         normal_maps[i] = normal_map
     
     return normal_maps.astype(np.uint8)
+
+def multi_band_blending(img1, img2, mask, levels=6):    
+    class GaussianPyramid:
+        def __init__(self, levels):
+            self.levels = levels
+            self.gaussian_kernel = self.create_gaussian_kernel()
+        
+        def create_gaussian_kernel(self, kernel_size=5, sigma=1.0):
+            # 1D Gaussian
+            x = torch.arange(kernel_size).float() - kernel_size // 2
+            gauss_1d = torch.exp(-(x**2) / (2 * sigma**2))
+            gauss_1d /= gauss_1d.sum()
+            # 2D Gaussian
+            gauss_2d = gauss_1d[:, None] * gauss_1d[None, :]
+            gauss_2d = gauss_2d.expand(3, 1, kernel_size, kernel_size)
+            return gauss_2d
+
+        def build_pyramid(self, image):
+            pyramid = [image]
+            current = image
+            for _ in range(self.levels):
+                blurred = F.conv2d(current, self.gaussian_kernel, padding=2, groups=3)
+                down = F.avg_pool2d(blurred, kernel_size=2, stride=2)
+                pyramid.append(down)
+                current = down
+            return pyramid
+
+    class LaplacianPyramid:
+        def __init__(self, levels):
+            self.levels = levels
+            self.gaussian_pyramid = GaussianPyramid(levels)
+            self.gaussian_kernel = self.gaussian_pyramid.gaussian_kernel
+        
+        def build_pyramid(self, image):
+            gp = self.gaussian_pyramid.build_pyramid(image)
+            lp = []
+            for i in range(self.levels):
+                current = gp[i]
+                expanded = F.interpolate(gp[i + 1], scale_factor=2, mode='bilinear', align_corners=False)
+                # Ensure the expanded size matches the 'current' level
+                if expanded.shape[-2:] != current.shape[-2:]:
+                    expanded = F.pad(expanded, (0, current.shape[-1] - expanded.shape[-1], 0, current.shape[-2] - expanded.shape[-2]))
+                laplacian = current - expanded
+                lp.append(laplacian)
+            lp.append(gp[-1])
+            return lp
+
+    def reconstruct_from_pyramid(lp_pyramid):
+        image = lp_pyramid[-1]
+        for i in range(len(lp_pyramid) - 2, -1, -1):
+            image = F.interpolate(image, scale_factor=2, mode='bilinear', align_corners=False)
+            # Ensure the expanded size matches the current 'Laplacian' level
+            if image.shape[-2:] != lp_pyramid[i].shape[-2:]:
+                image = F.pad(image, (0, lp_pyramid[i].shape[-1] - image.shape[-1], 0, lp_pyramid[i].shape[-2] - image.shape[-2]))
+            image = image + lp_pyramid[i]
+            image = torch.clamp(image, 0, 1)
+        return image
+
+    device = img1.device
+    lp1 = LaplacianPyramid(levels).build_pyramid(img1)
+    lp2 = LaplacianPyramid(levels).build_pyramid(img2)
+    gp_mask = GaussianPyramid(levels).build_pyramid(mask)
+
+    blended_pyramid = []
+    for l1, l2, gm in zip(lp1, lp2, gp_mask):
+        blended = l1 * gm + l2 * (1 - gm)
+        blended_pyramid.append(blended)
+    
+    blended_image = reconstruct_from_pyramid(blended_pyramid)
+    return blended_image

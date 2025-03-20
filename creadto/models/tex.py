@@ -8,6 +8,8 @@ import numpy as np
 import os.path as osp
 from torchvision import transforms
 
+from creadto.utils.vision import multi_band_blending
+
 
 class PaintHuman:
     def __init__(self, device="cuda:0"):
@@ -16,9 +18,9 @@ class PaintHuman:
         model_root = "creadto-model"
         self.flaep = DetailFaceModel()
         self.face_detector = facer.face_detector('retinaface/mobilenet', device=device,
-                                                 model_path=osp.join(model_root, "mobilenet0.25_Final.pth"))
+                                                 model_path=osp.join(model_root, "detection/facer/mobilenet0.25_Final.pth"))
         self.face_parser = facer.face_parser('farl/celebm/448', device=device,
-                                             model_path=osp.join(model_root, "face_parsing.farl.celebm.main_ema_181500_jit.pt")) # optional "farl/lapa/448"
+                                             model_path=osp.join(model_root, "segmentation/facer/face_parsing.farl.celebm.main_ema_181500_jit.pt")) # optional "farl/lapa/448"
         self.bridge = np.load(osp.join(model_root, "flame", "flame2smplx_tex_1024.npy"), allow_pickle=True, encoding = 'latin1').item()
         
         albedo_root = osp.join(model_root, "template", "high-texture-raw", "white")
@@ -58,6 +60,7 @@ class PaintHuman:
         # extract head features
         result = self.flaep.decode(head_images, external_tex=head_albedos / 255., external_img=skin_dict['enhanced_images'] / 255.)
         up_sample = transforms.Compose([transforms.Resize((512, 512))])
+        up_fhd = transforms.Compose([transforms.Resize((1024, 1024))])
         # dynamic masking from albedo image
         segmented_masks = skin_dict['segmented_masks']
         uv_grid = result['uv_grid']
@@ -76,14 +79,17 @@ class PaintHuman:
         # map to body from head
         uv_batch_mask = self.to_body_texture(up_sample(uv_batch_mask).to(head_albedos.device)) * eye_demask
         face_albedos = self.to_body_texture(up_sample(result["uv_texture_gt"]) * 255.)
-        colored_albedos = (1. - uv_batch_mask) * colored_albedos + uv_batch_mask * face_albedos
+        
+        merged_albedos = (1. - uv_batch_mask) * colored_albedos + uv_batch_mask * face_albedos
+        colored_albedos = multi_band_blending(merged_albedos.cpu() / 255., colored_albedos.cpu() / 255., uv_batch_mask.cpu(), levels=6)
+        colored_albedos = colored_albedos * 255.
         # paint iris
         colored_albedos = self.paint_with_mask(colored_albedos, self.masks['iris'], eye_dict['mean_values'])
         # paint lips
         colored_albedos = self.paint_with_mask(colored_albedos, self.masks['lips'], lip_dict['mean_values'])
         
         # make normal_map
-        head_normal_map = result['uv_detail_normals_pos']
+        head_normal_map = result['uv_detail_normals']
         body_normal_map = self.normal_map.unsqueeze(dim=0).repeat(head_normal_map.shape[0], 1, 1, 1) / 255.
         body_normal_map = body_normal_map.to(head_normal_map.device)
         normal_mask = torch.zeros_like(result["uv_texture_gt"])
@@ -276,9 +282,9 @@ class NakedHuman:
         self.flaep = DetailFaceModel()
         self.face_detector = facer.face_detector('retinaface/mobilenet',
                                                  device=device,
-                                                 model_path=osp.join(model_root, "mobilenet0.25_Final.pth"))
+                                                 model_path=osp.join(model_root, "detection/facer/mobilenet0.25_Final.pth"))
         self.face_parser = facer.face_parser('farl/celebm/448',
-                                             model_path=osp.join(model_root, "face_parsing.farl.celebm.main_ema_181500_jit.pt"),
+                                             model_path=osp.join(model_root, "segmentation/facer/face_parsing.farl.celebm.main_ema_181500_jit.pt"),
                                              device=device) # optional "farl/lapa/448"
     
         self.bridge = np.load(osp.join(model_root, "flame", "flame2smplx_tex_1024.npy"), allow_pickle=True, encoding = 'latin1').item()

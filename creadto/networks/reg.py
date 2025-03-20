@@ -30,7 +30,7 @@ class IterativeRegression(nn.Module):
         self.detach_mean = detach_mean
         self.learn_mean = learn_mean
         if mean_param is None:
-            mean_param = torch.load('./creadto-model/body_iterative_regressor_mean.pth')
+            mean_param = torch.load('./creadto-model/body-generation/iterative-regression/body_iterative_regressor_mean.pth')
         if learn_mean:
             self.register_parameter(
                 'mean_param', nn.Parameter(mean_param, requires_grad=True))
@@ -123,7 +123,7 @@ class HumanDimEstimator:
             def to(self, *args, **kwargs):
                 return self.last
 
-        self.facial_model = MediaPipeLandmarker('./creadto-model/mp_face_landmarker.task', 0.5, 0.5)
+        self.facial_model = MediaPipeLandmarker('./creadto-model/landmark/mediapipe/mp_face_landmarker.task', 0.5, 0.5)
         self.kp_model, self.kp_transform = TokenPoseLandmarker(device), FakeTransform()
         self.sg_model, self.sg_transform = load.segment_model(device)
         self.device = device

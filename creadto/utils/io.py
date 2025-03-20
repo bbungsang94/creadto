@@ -119,11 +119,11 @@ def save_mesh(obj_name,
     Ref: https://github.com/patrikhuber/eos/blob/bd00155ebae4b1a13b08bf5a991694d682abbada/include/eos/core/Mesh.hpp
     Args:
         obj_name: str
-        vertices: shape = (nver, 3)
-        colors: shape = (nver, 3)
-        faces: shape = (ntri, 3)
+        vertices: shape = (n_vertices, 3)
+        colors: shape = (n_vertices, 3)
+        faces: shape = (n_triangles, 3)
         texture: shape = (uv_size, uv_size, 3)
-        uvcoords: shape = (nver, 2) max value<=1
+        uvcoords: shape = (n_vertices, 2) max value<=1
     '''
     if osp.splitext(obj_name)[-1] != '.obj':
         obj_name = obj_name + '.obj'
@@ -132,18 +132,16 @@ def save_mesh(obj_name,
     material_name = 'FaceTexture'
 
     # mesh lab start with 1, python/c++ start from 0
+    faces = copy.deepcopy(faces)
     faces += 1
     if inverse_face_order:
         faces = faces[:, [2, 1, 0]]
         if uvfaces is not None:
+            uvfaces = copy.deepcopy(uvfaces)
             uvfaces = uvfaces[:, [2, 1, 0]]
 
     # write obj
     with open(obj_name, 'w') as f:
-        # first line: write mtlib(material library)
-        # f.write('# %s\n' % osp.basename(obj_name))
-        # f.write('#\n')
-        # f.write('\n')
         if texture is not None:
             f.write('mtllib %s\n\n' % osp.basename(mtl_name))
 

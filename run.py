@@ -47,6 +47,10 @@ if __name__ == "__main__":
     import platform
     import os
     
+    import os
+    import sys
+    sys.path.append(os.path.join(os.getcwd(), "creadto"))
+
     if platform.system().lower() == "linux":
         os.environ['QT_QPA_PLATFORM'] = 'offscreen'
         global_root = "/workspace/cache"
@@ -55,6 +59,9 @@ if __name__ == "__main__":
     # os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
     # os.environ["CUDA_VISIBLE_DEVICES"] = "0"
     # os.environ["TORCH_USE_CUDA_DSA"] = '1'
+    
+    from example.fit_head_measure import run
+    run(path=r"D:\Creadto\CreadtoLibrary\example\sample_video\frames\frame_000166.png")
     
     from example.run_texture import procedure
     procedure(global_root)

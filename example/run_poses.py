@@ -37,7 +37,7 @@ def procedure(root):
     
     file_dict = load_texture_model(osp.join(root, "texture-model"))
     file_dict.update(load_poses_parameters(osp.join(root, "pose_parameter")))
-    smpl = SMPL("./creadto-model")
+    smpl = SMPL("./creadto-model/smplx")
     
     if osp.exists(osp.join(root, "pose-imitating")):
         shutil.rmtree(osp.join(root, "pose-imitating"))

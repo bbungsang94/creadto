@@ -361,8 +361,8 @@ def enhance_face_skin(images,
                   "lower_lip": 12, "upper_lip": 13, "hair": 14, "sunglasses": 15,
                   "hat": 16, "earring": 17, "necklace": 18}
     
-    face_detector = facer.face_detector('retinaface/mobilenet', device=device, model_path=r"./creadto-model/mobilenet0.25_Final.pth")
-    face_parser = facer.face_parser('farl/celebm/448', model_path=r"./creadto-model/face_parsing.farl.celebm.main_ema_181500_jit.pt", device=device) # optional "farl/lapa/448"
+    face_detector = facer.face_detector('retinaface/mobilenet', device=device, model_path=r"./creadto-model/detection/facer/mobilenet0.25_Final.pth")
+    face_parser = facer.face_parser('farl/celebm/448', model_path=r"./creadto-model/segmentation/facer/face_parsing.farl.celebm.main_ema_181500_jit.pt", device=device) # optional "farl/lapa/448"
     with torch.inference_mode():
         faces = face_detector(images)
         faces = face_parser(images, faces)
@@ -476,8 +476,8 @@ def extract_sclera(head_image_paths=r"D:\dump\sample\head_images"):
         image = facer.hwc2bchw(facer.read_hwc(osp.join(head_image_paths, file))).to(device=device)
         images.append(image)
     images = torch.concat(images).to(device)
-    face_detector = facer.face_detector('retinaface/mobilenet', device=device, model_path=r"./creadto-model/mobilenet0.25_Final.pth")
-    face_parser = facer.face_parser('farl/celebm/448', model_path=r"./creadto-model/face_parsing.farl.celebm.main_ema_181500_jit.pt", device=device) # optional "farl/lapa/448"
+    face_detector = facer.face_detector('retinaface/mobilenet', device=device, model_path=r"./creadto-model/detection/facer/mobilenet0.25_Final.pth")
+    face_parser = facer.face_parser('farl/celebm/448', model_path=r"./creadto-model/fsegmentation/facer/ace_parsing.farl.celebm.main_ema_181500_jit.pt", device=device) # optional "farl/lapa/448"
     with torch.inference_mode():
         faces = face_detector(images)
         faces = face_parser(images, faces)
@@ -549,8 +549,8 @@ def get_parts_colour(images: torch.Tensor, parts: List[str], min_thrd = 5, max_t
                   "lower_lip": 12, "upper_lip": 13, "hair": 14, "sunglasses": 15,
                   "hat": 16, "earring": 17, "necklace": 18}
     
-    face_detector = facer.face_detector('retinaface/mobilenet', device=device, model_path=r"./creadto-model/mobilenet0.25_Final.pth")
-    face_parser = facer.face_parser('farl/celebm/448', model_path=r"./creadto-model/face_parsing.farl.celebm.main_ema_181500_jit.pt", device=device) # optional "farl/lapa/448"
+    face_detector = facer.face_detector('retinaface/mobilenet', device=device, model_path=r"./creadto-model/detection/facer/mobilenet0.25_Final.pth")
+    face_parser = facer.face_parser('farl/celebm/448', model_path=r"./creadto-model/segmentation/facer/face_parsing.farl.celebm.main_ema_181500_jit.pt", device=device) # optional "farl/lapa/448"
     names = images['names']
     images = images['images']
     with torch.inference_mode():

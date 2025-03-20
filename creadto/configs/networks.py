@@ -31,7 +31,7 @@ class HRNet:
     use_old_impl: bool = False
     pretrained_layers: Tuple[str] = ('*',)
     pretrained_path: str = (
-        './creadto-model/hrnet-4stage-basic'
+        './creadto-model/segmentation/high-resolution/hrnet-4stage-basic'
     )
     stage1: Stage = Stage()
     stage2: Stage = Stage(num_branches=2, num_blocks=(4, 4),

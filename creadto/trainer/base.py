@@ -3,8 +3,10 @@ import math
 import os
 from abc import ABCMeta, abstractmethod
 from datetime import datetime
+import random
 from typing import Tuple
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -17,6 +19,13 @@ from creadto.utils.log import CSVWriter, print_message
 from creadto.utils.report import get_input_variable_count
 
 
+def set_seed(seed):
+    torch.backends.cudnn.benchmark = False
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    
+    
 class Base(metaclass=ABCMeta):
     def __init__(self, viewer=None,
                  loaders: Tuple[DataLoader, DataLoader] = None,
@@ -176,13 +185,16 @@ class Base(metaclass=ABCMeta):
                 result['model'] = self._model
                 self._viewer.summary(**result)
 
-    def _run_train_epoch(self, index, progress):
+    def _run_train_epoch(self, index, progress, override=False):
         self._model.train()
         running_loss = 0.
         avg_loss = 0
         mode = progress.desc
         line = "Calculating loss..."
         progress.set_description(line)
+        if override:
+            return progress
+        
         for i, data in enumerate(progress):
             if progress.total < progress.n:
                 return 1.0

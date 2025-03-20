@@ -51,9 +51,9 @@ def body_to_measure(vertices, gender):
     from creadto.models.legacy import GraphTailor
     from creadto._external.smpl.smpl import SMPL
 
-    dim_guide = torch.load(os.path.join('./creadto-model', 'body_dimension_guide.pt'))
+    dim_guide = torch.load(os.path.join('./creadto-model/measure', 'body_dimension_guide.pt'))
     tailor = GraphTailor(dim_guide)
-    smpl = SMPL("./creadto-model")
+    smpl = SMPL("./creadto-model/template")
 
     bodies = dict()
     for pose, value in dim_guide['poses'].items():
@@ -71,9 +71,8 @@ def head_to_measure(vertices):
     from creadto.models.legacy import GraphTailor
     from creadto._external.flame.flame import FLAME
 
-    dim_guide = torch.load(os.path.join('./creadto-model', 'head_dimension_guide.pt'))
+    dim_guide = torch.load(os.path.join('./creadto-model/measure', 'head_dimension_guide.pt'))
     tailor = GraphTailor(dim_guide)
-    smpl = FLAME("./creadto-model")
 
     bodies = {'standard': vertices.detach().clone()}
 

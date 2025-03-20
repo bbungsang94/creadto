@@ -54,9 +54,9 @@ def load_images(root=r"D:\dump\cache\hair-input-images"):
     
 def get_face_parser(model_root="D:\Creadto\CreadtoLibrary\creadto-model", device="cuda:0"):
     face_detector = facer.face_detector('retinaface/mobilenet', device=device,
-                                            model_path=osp.join(model_root, "mobilenet0.25_Final.pth"))
+                                            model_path=osp.join(model_root, "detection/facer/mobilenet0.25_Final.pth"))
     face_parser = facer.face_parser('farl/celebm/448', device=device,
-                                            model_path=osp.join(model_root, "face_parsing.farl.celebm.main_ema_181500_jit.pt")) # optional "farl/lapa/448"
+                                            model_path=osp.join(model_root, "segmentation/facer/face_parsing.farl.celebm.main_ema_181500_jit.pt")) # optional "farl/lapa/448"
     categories = {"background": 0, "neck": 1, "skin": 2, "cloth": 3, 
                   "left_ear": 4, "right_ear": 5, "left_eyebrow": 6, "right_eyebrow": 7,
                   "left_eye": 8, "right_eye": 9, "nose": 10, "mouth": 11,

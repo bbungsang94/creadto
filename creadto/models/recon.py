@@ -31,7 +31,7 @@ class BLASS:
         # Processor
         mlp_module = MLP(input_dim=2193, output_dim=145)
         self.body_regressor = IterativeRegression(module=mlp_module)
-        self.body_decoder = SMPL("./creadto-model/template")
+        self.body_decoder = SMPL("./creadto-model/smplx")
         #   image to face
         # Postprocessor
         #   Tailor(body and head)
@@ -44,7 +44,7 @@ class BLASS:
                 'offset': (142, 146)
             }
         }
-        weight_pack = torch.load('./creadto-model/BLASS-v1-enc-reg-dec-pack')['model']
+        weight_pack = torch.load('./creadto-model/app/BLASS-v1-enc-reg-dec-pack')['model']
         encoder_dict = self.image_encoder.state_dict()
         subset = dict()
         for k, v in weight_pack.items():
@@ -153,16 +153,16 @@ class BLASS:
 
 class DimensionHuman:
     def __init__(self, head=True):
-        female_model = torch.jit.load("./creadto-model/BodyDecoder-f47-10475-v1.pt")
+        female_model = torch.jit.load("./creadto-model/measure/BodyDecoder-f47-10475-v1.pt")
         female_model.eval()
-        male_model = torch.jit.load("./creadto-model/BodyDecoder-m47-10475-v1.pt")
+        male_model = torch.jit.load("./creadto-model/measure/BodyDecoder-m47-10475-v1.pt")
         male_model.eval()
         self.models = {
             'body_female': female_model,
             'body_male': male_model
         }
         if head:
-            head_model = torch.jit.load("./creadto-model/HeadDecoder-x22-5023-v1.pt")
+            head_model = torch.jit.load("./creadto-model/measure/HeadDecoder-x22-5023-v1.pt")
             head_model.eval()
             self.models['head'] = head_model
 
