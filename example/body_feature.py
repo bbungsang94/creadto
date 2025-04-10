@@ -5,7 +5,7 @@ from torchvision.transforms.functional import to_pil_image
 
 def run():
     import numpy as np
-    from creadto.models.det import TokenPoseLandmarker
+    from creadto.services.det import TokenPoseLandmarker
     video_path = r".\example\sample_video\Psick-univ-full-vert.mp4"
     video_rotate = 0
     device = "cuda"

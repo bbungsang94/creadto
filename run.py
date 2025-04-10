@@ -60,10 +60,10 @@ if __name__ == "__main__":
     # os.environ["CUDA_VISIBLE_DEVICES"] = "0"
     # os.environ["TORCH_USE_CUDA_DSA"] = '1'
     
-    from example.fit_head_measure import run
-    run(path=r"D:\Creadto\CreadtoLibrary\example\sample_video\frames\frame_000166.png")
+    # from example.fit_head_measure import run
+    # run(path=r"D:\Creadto\CreadtoLibrary\example\sample_video\frames\frame_000166.png")
     
-    from example.run_texture import procedure
+    from example.gen_3d_head import procedure
     procedure(global_root)
     
     # extract_shadow()

@@ -5,7 +5,7 @@ from typing import Dict, List
 import cv2
 import torch
 import numpy as np
-from example.run_hlamp import image_to_flaep
+from example.gen_3d_head import image_to_flaep
 
 def make_images(mask_root, origin_root):
     files = os.listdir(mask_root)
@@ -283,7 +283,7 @@ def run_displace_cycle(root):
     import torch
     from PIL import Image
     from torchvision.transforms import ToTensor, ToPILImage
-    from creadto.models.recon import DetailFaceModel
+    from creadto.services.recon import DetailFaceModel
     from creadto.utils.vision import remove_light
     flaep = DetailFaceModel()
     trans = ToTensor()
@@ -320,7 +320,7 @@ def run_cut_only_head_image(root=r"D:\dump\head_model_test\input_images"):
     import torch
     from PIL import Image
     from torchvision.transforms import ToTensor, ToPILImage
-    from creadto.models.recon import DetailFaceModel
+    from creadto.services.recon import DetailFaceModel
     flaep = DetailFaceModel()
     trans = ToTensor()
     to_pil = ToPILImage()
@@ -638,7 +638,7 @@ def run_paint_cycle(root: str = r"D:\dump\sample\head_images",
     # load images
     from creadto.utils.io import load_images, load_image
     device = "cuda:0"
-    images = load_images(root, device)
+    images = load_images(root, device=device)
     eye_dict = get_parts_colour(images, ['left_eye', 'right_eye'])
     lip_dict = get_parts_colour(images, ['lower_lip', 'upper_lip'], max_thrd=255)
     eyebrow_dict = get_parts_colour(images, ['left_eyebrow', 'right_eyebrow'], max_thrd=255)

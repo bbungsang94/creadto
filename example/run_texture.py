@@ -7,7 +7,7 @@ from PIL import Image
 
 
 def image_to_texture(root, mini_batch_size):
-    from creadto.models.tex import PaintHuman
+    from creadto.services.tex import PaintHuman
     
     model = PaintHuman()
     files = os.listdir(root)

@@ -24,6 +24,25 @@ def setup_dist(device=0):
     if distributed.is_initialized():
         return
 
+def devicex():
+    global used_device
+    try:
+        import torch_xla
+        import torch_xla.core.xla_model as xm
+        tpu_available = True
+    except ImportError:
+        tpu_available = False
+
+    if torch.cuda.is_available():
+        device = torch.device(f"cuda:{used_device}")  # NVIDIA GPU
+    elif tpu_available:
+        device = xm.xla_device()  # TPU
+    elif torch.backends.mps.is_available():
+        device = torch.device("mps")  # Apple Silicon (Mac)
+    else:
+        device = torch.device("cpu")  # CPU
+    
+    return device.type
 
 def device():
     """

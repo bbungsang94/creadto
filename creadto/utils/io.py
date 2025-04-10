@@ -5,13 +5,10 @@ import os.path as osp
 import shutil
 from datetime import datetime
 import facer
-from pathlib import Path
 from typing import Dict, Any
 from PIL.Image import Image
-import numpy as np
 import torch
 import yaml
-from skimage.io import imsave
 
 from contents import Contents
 
@@ -31,26 +28,38 @@ def read_json(full_path=''):
     return file
 
 def load_image(path, mono=False, integer=True, device="cpu") -> torch.Tensor:
-    image = facer.hwc2bchw(facer.read_hwc(path)).to(device=device)
+    image = facer.hwc2bchw(facer.read_hwc(path))
     if mono:
         image = image[:, 0]
     if integer is False:
         image = image.type(torch.FloatTensor) / 255.
     return image.to(device)
 
-def load_images(root: str, device="cpu") -> torch.Tensor:
+def load_images(root: str, mono=False, integer=True, device="cpu", pad=False) -> torch.Tensor:
     extension = ['jpg', 'jpeg', 'png', 'bmp']
     files = os.listdir(root)
     files = [x for x in files if x.split('.')[-1].lower() in extension]
     images = []
     if len(files) > 0:
         for file in files:
-            image = load_image(osp.join(root, file), device=device)
-            images.append(image)
-        return {'images': torch.concat(images),
-                'names': files}
+            image = load_image(osp.join(root, file), mono, integer, device)
+            images.append(image.squeeze())
+        if pad:
+            images = pad_images(images).to(device)
+        return images
     else:
-        return None
+        raise FileNotFoundError
+
+def pad_images(images: torch.tensor, pad_value=0):
+    max_shape = list(max([t.shape for t in images], key=lambda x: tuple(x)))
+    
+    padded_tensors = []
+    for image in images:
+        pad_size = [(0, max_dim - t_dim) for t_dim, max_dim in zip(image.shape[::-1], max_shape[::-1])]
+        pad_size = [p for pair in pad_size for p in pair]  # Flatten
+        padded_tensors.append(torch.nn.functional.pad(image, pad_size, value=pad_value))
+    
+    return torch.stack(padded_tensors)
 
 def load_mesh(mesh_path):
     """ Ref: https://github.com/facebookresearch/pytorch3d/blob/25c065e9dafa90163e7cec873dbb324a637c68b7/pytorch3d/io/obj_io.py

@@ -118,7 +118,7 @@ def make_mask_image(image_size=512):
 
 def get_multiview_images(root=r"D:\Creadto\Heritage\Dataset\H3DSv02\h3ds\1141a3328d7e9c4e\image"):
     import mediapipe as mp
-    from creadto.models.det import MediaPipeLandmarker
+    from creadto.services.det import MediaPipeLandmarker
 
     files = ["img_0001", "img_0024", "img_0052", "img_0038"]
     trans = transforms.ToTensor()

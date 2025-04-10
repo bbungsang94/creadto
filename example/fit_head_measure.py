@@ -1,6 +1,6 @@
 from PIL import Image
 from torchvision.transforms import ToTensor
-from creadto.models.recon import DetailFaceModel
+from creadto.services.recon import DetailFaceModel
 
 
 def run(path: str):
